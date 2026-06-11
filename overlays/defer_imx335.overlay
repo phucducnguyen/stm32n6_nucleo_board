@@ -1,0 +1,16 @@
+/*
+ * Diagnostic overlay: defer the IMX335 sensor's init so it does NOT run at
+ * boot (POST_KERNEL, before the banner). Goal — bisect the silent camera hang:
+ *
+ *   - If the board now prints the boot banner, the hang was in imx335_init
+ *     (sensor over I2C — clock/power/ribbon), and the rest of boot is fine.
+ *   - If it is still silent, the hang is in the DCMIPP, not the sensor.
+ *
+ * The capture sample never calls device_init(), so with this in place the
+ * sensor simply stays uninitialised and the sample reports the camera path
+ * not ready — but only AFTER the banner, which is the whole point: it restores
+ * console visibility that the pre-banner hang was eating.
+ */
+&imx335 {
+	zephyr,deferred-init;
+};

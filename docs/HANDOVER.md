@@ -18,10 +18,13 @@ New serial-boot facts learned this session (now in N6-FACTS + CLAUDE.md):
 - A **refused** download ("failed to download Sector[0]", wrong link address) **consumes the one-shot DFU session** and zombifies it → the next push segfaults (exit -11). Lost a power cycle to this.
 - Hence **`scripts/preflight-flash.sh`** (gate) + **`scripts/test-preflight.sh`** (regression test): never `west flash` bare again; preflight checks link address/fit/signed/DFU-armed before pushing.
 
-Next step (do the FREE analysis before spending another power cycle):
-1. Bisect the early fault statically: diff the `PRE_KERNEL` init set of `build/cam-dbg` vs `build/hello-sb` (devicetree-enabled nodes + their init levels). Prime suspects: CSI/DCMIPP clock-tree config, camera pinctrl, the `csi_gpio*_hog`s — anything the shield enables that touches a peripheral before its clock.
-2. Cheapest empirical bisection (one power cycle each, all via `scripts/preflight-flash.sh build/<dir> --flash`): build capture with the camera **drivers off but DT on**, then DT minimal, to find which node enabling kills boot. Or: try to capture a fault — if the debug AP is reachable in serial-boot mode, read SCB CFSR/HFSR + PC after the hang via ST-Link (run-mode AP is closed, serial-boot may differ).
-3. Only after the faulting node is known: fix (enable the missing clock / correct the pinctrl) and re-verify. Then flash-boot the working config for a persistent demo.
+**Full investigation log + everything ruled out: `docs/camera-bringup-debug-log.md` — READ THAT FIRST, don't repeat experiments.** Ruled out so far: memory layout, clock tree, jumpers/power, the IMX335 sensor, shell buffering, and SWD debugging (debug port locked in serial boot).
+
+**NEXT SESSION — start here (one power cycle):**
+1. `scripts/preflight-flash.sh build/cam-trace-clean --flash` — this build is BUILT + signed + waiting. It has `printk` boot probes + DCMIPP-step markers (shell off → direct output).
+2. Capture console via the reliable method: background `sg dialout -c "stty -F /dev/ttyACM0 115200 raw -echo; cat /dev/ttyACM0 > /tmp/x.log"` started before the flash. (serlog3.py was flaky — exit 144.)
+3. Interpret the `DBGMARK` lines per the table in the debug log: tells us if the console works at all, how far boot gets, and exactly where the DCMIPP init stalls (prime suspect `HAL_DCMIPP_Init`).
+4. Temporary debug edits live in the pinned `zephyr/` tree (dcmipp markers + sample SYS_INIT probes) — revert when done: `git -C zephyr checkout drivers/video/video_stm32_dcmipp.c samples/drivers/video/capture/src/main.c`.
 
 ## DEFERRED
 
