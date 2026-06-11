@@ -35,12 +35,12 @@ STM32N6 boots its application into RAM (no XIP from internal flash — there is 
 
 | Region | Base | Size | Use |
 |---|---|---|---|
-| FLEXRAM + AXISRAM1 + AXISRAM2 (`axisram1` node) | 0x34000000 | ~2 MB | **system RAM via our overlay** — code, data, video buffer pool |
-| AXISRAM2 alone (`axisram2` node) | +0x180400 | 511 KB | upstream Nucleo default — too small for video; superseded by overlay |
-| AXISRAM3–6 | (NPU/ISP domain) | ~2.2 MB | untouched; future NPU/ISP work |
-| MX25UM51245G ext flash | XSPI | 64 MB | signed boot image storage |
+| AXISRAM2 (`axisram2` node) | 0x34180400 | 511 KB | **system RAM — code+data. The ONLY window the BootROM loads into (flash AND serial boot); every image must fit + link here** |
+| FLEXRAM + AXISRAM1 (+ first 512 KB of AXISRAM2) | 0x34000000 | 1536 KB (shrunk by our overlay) | runtime-only **named region `AXISRAM1`** — video buffer pool lives here, placed at first alloc, never part of the image |
+| AXISRAM3–6 | 0x34200000 | 4 × 448 KB contiguous | RAMCFG-gated, off by default; future bigger pools / NPU work (see `N6-FACTS.md`) |
+| MX25UM51245G ext flash | 0x70000000 | 64 MB | signed boot image storage |
 
-Budget rule of thumb: ~370 KB code+data for the capture sample, rest is buffer pool. One RGB565 frame = W×H×2 bytes; pool holds 2 frames (double buffering).
+Budget rule of thumb: capture-sample image ≈ 110 KB of the 511 KB window; pool = W×H×2 bytes ×2 buffers ≤ 1536 KB (640×480 → 1.2 MB). Full BootROM/boot-mode reference: `docs/N6-FACTS.md`.
 
 ## Boot chain (N6-specific, unlike classic STM32)
 
@@ -67,7 +67,7 @@ devicetree wiring (this is where board/camera meet):
   shield st_b_cams_imx_mb1854  ── declares imx335 node on csi_i2c, CSI-2 2-lane link,
   │                               chosen zephyr,camera = &csi_capture_port
   board nucleo_n657x0_q        ── csi_connector gpio map, csi pins, clocks (IC18 = 27 MHz CSIPHY)
-  our overlay                  ── zephyr,sram = &axisram1 (RAM fix, see CLAUDE.md invariants)
+  our overlay                  ── vidpool: buffer pool → named region AXISRAM1 (see CLAUDE.md invariants)
 ```
 
 Build composition = board dts + shield overlay + our `EXTRA_DTC_OVERLAY_FILE` + Kconfig fragments on the command line. No Zephyr-tree patches; everything we own sits outside `zephyr/`.
@@ -80,5 +80,7 @@ atlas (this machine) is the dev host. Self-contained: `.venv` (west, cmake, ninj
 
 - **2026-06-10 — Zephyr over STM32Cube/ThreadX** for this project: industry momentum, user's stated goal, first-class IMX335+DCMIPP support already upstream. Tradeoff accepted: the Neural-ART NPU is unreachable from Zephyr today; NPU experiments will be a separate STM32Cube.AI track, with learnings ported back.
 - **2026-06-10 — Pinned release (v4.4.1) + narrowed modules** instead of tracking `main` with full module set: reproducible builds, 1.7 GB instead of ~8 GB, camera support is already in-release so we don't need main.
-- **2026-06-10 — `zephyr,sram = &axisram1` via local overlay** rather than patching the board dts in-tree: keeps `zephyr/` pristine/pinned; candidate for an upstream PR (the DK already does exactly this).
+- **2026-06-10 — `zephyr,sram = &axisram1` via local overlay** rather than patching the board dts in-tree: keeps `zephyr/` pristine/pinned. **SUPERSEDED same day — see next entry.**
+- **2026-06-10 — REVERSAL: image stays in the stock 511 KB window; only the video pool moves.** Hardware + ST docs (UM3234; `docs/N6-FACTS.md`) proved the BootROM loads images ONLY into AXISRAM2 @ `0x34180400`, for both flash and serial boot. Relinking `zephyr,sram` to axisram1 yields images the BootROM refuses over DFU ("failed to download Sector[0]") or silently crashes from flash. Correct architecture = `overlays/nucleo_n657x0_q_vidpool.overlay`: shrink `axisram1` to 1536 KB and point `CONFIG_VIDEO_BUFFER_POOL_ZEPHYR_REGION_NAME` at it — the same pattern the DK uses upstream with its PSRAM region. `_bigram` / `_axisram_noflex` overlays kept as documented dead ends.
+- **2026-06-10 — Research-first after trial-and-error stalled**: ST + Zephyr primary-source findings consolidated into `docs/N6-FACTS.md` (BootROM window, BOOT1-over-BOOT0 priority, one-DFU-push-per-power-cycle, zombie-DFU segfault, BOOTFAILED red LED). Read it before touching boot or memory config.
 - **2026-06-10 — Sample-first bring-up**: prove the full HW path with the upstream capture sample before writing our own app, so any failure is isolated to hardware/config, not our code.

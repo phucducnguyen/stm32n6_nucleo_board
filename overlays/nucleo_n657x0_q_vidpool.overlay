@@ -1,0 +1,16 @@
+/*
+ * Video buffer pool region for NUCLEO-N657X0-Q.
+ *
+ * System RAM stays on the stock 511 KB axisram2 (0x...180400) because that is
+ * the only window the N6 BootROM will load an image into (serial boot verified;
+ * flash boot consistent). The big FLEXRAM+AXISRAM1 space is used at runtime
+ * only, as the named region "AXISRAM1" holding the video buffer pool
+ * (CONFIG_VIDEO_BUFFER_POOL_ZEPHYR_REGION=y + _NAME="AXISRAM1").
+ *
+ * Shrink axisram1 so the named region cannot overlap system RAM:
+ * 0x0..0x180000 = 400K FLEXRAM + 624K AXISRAM1 + 512K of AXISRAM2 = 1536 KB,
+ * ending 1 KB before system RAM at 0x180400.
+ */
+&axisram1 {
+	reg = <0x0 0x180000>;
+};

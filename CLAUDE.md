@@ -1,6 +1,7 @@
 # CLAUDE.md — STM32N6 camera project cheat sheet
 
-Architecture → `docs/architecture.md` · Current state → `docs/HANDOVER.md` · Backlog → `docs/TODO.md`.
+Architecture → `docs/architecture.md` · Current state → `docs/HANDOVER.md` · Backlog → `docs/TODO.md` ·
+**Board/BootROM facts (researched + verified, read before touching boot/memory) → `docs/N6-FACTS.md`**.
 This file = how to build/flash and what not to break.
 
 ## What this is
@@ -27,32 +28,40 @@ Always with the venv on PATH (west sub-tools resolve `cmake` by name):
 ```sh
 cd ~/projects/stm32n6
 export PATH="$PWD/.venv/bin:$PATH"
-west build -p -b nucleo_n657x0_q --shield st_b_cams_imx_mb1854 \
-  zephyr/samples/drivers/video/capture -d build/capture -- \
-  -DEXTRA_DTC_OVERLAY_FILE="$PWD/overlays/nucleo_n657x0_q_bigram.overlay" \
-  -DCONFIG_VIDEO_FRAME_WIDTH=800 -DCONFIG_VIDEO_FRAME_HEIGHT=480 \
+west build -p -b 'nucleo_n657x0_q//sb' --shield st_b_cams_imx_mb1854 \
+  zephyr/samples/drivers/video/capture -d build/cam-sb -- \
+  -DEXTRA_DTC_OVERLAY_FILE="$PWD/overlays/nucleo_n657x0_q_vidpool.overlay" \
+  -DCONFIG_VIDEO_FRAME_WIDTH=640 -DCONFIG_VIDEO_FRAME_HEIGHT=480 \
   -DCONFIG_VIDEO_PIXEL_FORMAT='"RGBP"' \
-  -DCONFIG_VIDEO_BUFFER_POOL_HEAP_SIZE=1600000 -DCONFIG_MAIN_STACK_SIZE=2048
+  -DCONFIG_VIDEO_BUFFER_POOL_HEAP_SIZE=1250000 \
+  -DCONFIG_VIDEO_BUFFER_POOL_ZEPHYR_REGION=y \
+  -DCONFIG_VIDEO_BUFFER_POOL_ZEPHYR_REGION_NAME='"AXISRAM1"' \
+  -DCONFIG_MAIN_STACK_SIZE=2048
 ```
+
+(drop the `//sb` and use the plain board name for the flash-boot build; same overlay/configs)
 
 ## Flash / run (STM32N6 has NO internal flash — read this)
 
 The boot ROM only executes **signed** images, chainloaded from external octo-SPI flash (MX25UM51245G) or pushed over USB in serial-boot mode. Signing is automatic at build **iff** `STM32_SigningTool_CLI` (ships inside STM32CubeProgrammer ≥ 2.18) is on PATH.
 
-| Mode | BOOT0 | BOOT1 | Use |
+| Mode | BOOT0 (JP1) | BOOT1 (JP2) | Use |
 |---|---|---|---|
-| Run from ext flash | 0 | 0 | normal operation |
-| Dev boot (flash via ST-Link) | 0 | 1 | `west flash` target |
-| Serial boot (USB DFU-like) | 1 | 0 | `nucleo_n657x0_q/stm32n657xx/sb` variant, RAM-only, re-load every power cycle |
+| Run from ext flash | 0 (printed) | 0 (printed) | normal operation; debug port CLOSED (normal); red LED = BOOTFAILED |
+| Dev boot (flash via ST-Link) | x | 1 (unprinted) | `west flash` for the default target; BOOT1 wins over BOOT0 |
+| Serial boot (USB DFU on CN8) | 1 (unprinted) | 0 (printed) | `//sb` variant: push to RAM, runs immediately; needs BOTH cables (CN10 power/console + CN8 DFU) |
 
-Procedure: BOOT1=1 → `west flash` → BOOT1=0 → reset. Console: `/dev/ttyACM0` 115200 8N1 (ST-Link VCP → USART1).
+Jumper position 1 = the printed/silkscreen side = logic 0. Console: newest `/dev/ttyACM*` (renumbers on replug!) 115200 8N1.
+
+**Serial-boot session rules:** one download per power-up; RESET does NOT re-arm DFU — only a full power cycle (both cables out) does; check `lsusb | grep df11` before pushing; a zombie DFU entry makes `STM32_Programmer_CLI` segfault (exit -11) — that means power cycle, nothing is broken. Full detail: `docs/N6-FACTS.md`.
 
 ## Invariants — do not break
 
-- **`overlays/nucleo_n657x0_q_bigram.overlay` is load-bearing for anything using the camera.** Upstream Nucleo dts parks `zephyr,sram` on the 511 KB AXISRAM2; video buffers need the ~2 MB `axisram1` region (the DK does this upstream; the Nucleo doesn't — upstreamable fix). Without it: `region RAM overflowed` at link.
+- **The BootROM loads images ONLY into the 511 KB window at `0x34180400` (axisram2) — flash boot AND serial boot.** Every image must link there (= the stock `zephyr,sram`). `overlays/nucleo_n657x0_q_bigram.overlay` and `_axisram_noflex.overlay` (relink to axisram1) are **dead ends kept as documentation** — downloads outside the window are refused, flash-boot images linked elsewhere die silently.
+- **Camera needs `overlays/nucleo_n657x0_q_vidpool.overlay`**: image stays in the 511 KB window; the 1.25 MB video buffer pool goes to the big RAM as named region `AXISRAM1` via `CONFIG_VIDEO_BUFFER_POOL_ZEPHYR_REGION[_NAME]` (same pattern the DK uses upstream with its PSRAM). Without it: `region RAM overflowed` at link.
 - **Zephyr stays pinned at v4.4.1.** No bare `west update` (it would also pull every module). Upgrading = deliberate task: bump tag, `west update --narrow -o=--depth=1 cmsis cmsis_6 hal_stm32`, rebuild, retest camera.
 - **Don't fix "cmake not found" with sudo apt.** It's in `.venv/bin`; put it on PATH.
-- **Video buffer pool must fit RAM:** width×height×2 bytes/frame ×2 buffers ≤ ~1.7 MB free. 800×480 RGB565 + 1.6 MB pool = 82% RAM. Full 5 MP (2592×1944) does NOT fit internal SRAM — that needs DCMIPP downscale/crop (it can) or external RAM (Nucleo has none).
+- **Video buffer pool must fit its region:** width×height×2 bytes/frame ×2 buffers ≤ 1536 KB (the shrunk `AXISRAM1` region; the *image* has its own separate 511 KB budget). 640×480 RGB565 ×2 = 1.2 MB fits. Full 5 MP (2592×1944) does NOT fit internal SRAM — that needs DCMIPP downscale/crop (it can) or AXISRAM3–6 (4×448 KB contiguous, RAMCFG-gated, see `docs/N6-FACTS.md`).
 - **Signing tool errors ≠ build errors.** `zephyr.bin` builds fine without CubeProgrammer; only flashing/booting needs the signed image.
 - Serial port needs `dialout` group membership (no sudo workarounds in scripts).
 - Boot pins: don't leave BOOT1=1 after flashing — the board will sit in dev boot doing nothing.

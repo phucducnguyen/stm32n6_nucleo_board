@@ -1,23 +1,21 @@
 # HANDOVER
 
-## CURRENT (2026-06-10)
+## CURRENT (2026-06-10, late)
 
-**State: toolchain + camera build verified end-to-end on atlas; flash blocked on two user actions (sudo script + CubeProgrammer download).**
+**State: toolchain + sign + flash + serial-boot ALL verified on hardware (hello_world runs both ways). Camera first light is one power-cycle away: `build/t3-cam-vidpool` is built with the now-correct memory layout, waiting for an armed DFU session.**
 
-Done this session:
-- Workspace created at `~/projects/stm32n6` (west T1, Zephyr v4.4.1 pinned, modules narrowed to cmsis/cmsis_6/hal_stm32, all host tooling in `.venv` incl. cmake+ninja pip wheels, SDK at `~/zephyr-sdk-1.0.1`).
-- **Video capture sample BUILDS clean** for `nucleo_n657x0_q` + `--shield st_b_cams_imx_mb1854`: 800×480 RGB565, 1.6 MB double-buffer pool, 82% of 2 MB RAM. Exact command in root `CLAUDE.md`.
-- Root-caused and fixed RAM overflow: upstream Nucleo dts uses 511 KB `axisram2` as system RAM; `overlays/nucleo_n657x0_q_bigram.overlay` switches to the ~2 MB `axisram1` (same as the DK's fsbl variant). **Load-bearing for all camera builds.** Upstream-PR candidate.
-- Board enumerates on atlas: STLINK-V3 `0483:3754`, console `/dev/ttyACM0` (first cable/port was dead — re-plug fixed it).
-- Docs written: `CLAUDE.md`, `docs/architecture.md`, this file, `docs/TODO.md`; `scripts/host-setup.sh` prepared.
+What's proven on hardware:
+- Full chain works: build → auto-sign (CubeProgrammer 2.22 user-space at `~/STMicroelectronics`) → flash-boot run (hello banner in run mode) AND serial-boot push (`//sb` + DFU on CN8 → banner, ~5 s loop).
+- `scripts/host-setup.sh` ran (dialout, udev, tools). Use `sg dialout` until next re-login.
+- **Root cause of every camera-boot failure found and documented:** the BootROM loads images ONLY into the 511 KB window at `0x34180400` — the old `bigram`/`noflex` overlays (relink to axisram1) are dead ends. Correct fix = `overlays/nucleo_n657x0_q_vidpool.overlay` (image in stock window, 1.25 MB pool in named region `AXISRAM1`). Deep-researched + written up in **`docs/N6-FACTS.md`** (BootROM, jumpers, DFU rules, LEDs, RAM map — read that, don't re-research).
+- `build/t3-cam-vidpool` links exactly right: RAM 113 KB/511 KB, AXISRAM1 1.25 MB/1536 KB. 640×480 RGBP, EARLY_CONSOLE + immediate logging.
 
-Blocked on user (in order):
-1. `! sudo bash ~/projects/stm32n6/scripts/host-setup.sh` — dialout group, gperf/dtc/ccache/picocom, ST-Link udev rule. Then re-plug the board and re-login (or use `sg dialout`).
-2. Download **STM32CubeProgrammer ≥ 2.18 (Linux)** from st.com in a browser (login + license wall; headless fetch is blocked — verified). Hand me the zip path; I'll install it user-space to `~/STMicroelectronics` and wire PATH. It bundles `STM32_SigningTool_CLI`, mandatory for the N6 boot ROM's signed-image requirement.
-
-Immediately after unblock (next session start here):
-- Install CubeProgrammer from the user's zip → re-run the build (signing now happens post-build) → BOOT1=1 → `west flash -d build/capture` → BOOT1=0 → reset → expect IMX335 probe + frame stats on `/dev/ttyACM0` 115200 (`.venv/bin/python -m serial.tools.miniterm /dev/ttyACM0 115200` or picocom).
-- First-light pass criteria: sensor detected on csi_i2c@0x1a, `video_dequeue` returning buffers at a steady rate, no DCMIPP overrun errors.
+Next step (start here):
+1. Board to serial boot (BOOT0 unprinted, BOOT1 printed), both cables, **full power cycle** (RESET doesn't re-arm DFU; zombie DFU segfaults the CLI — see N6-FACTS).
+2. Start logger: `sg dialout -c "nohup ~/projects/stm32n6/.venv/bin/python /tmp/serlog3.py > /tmp/uartX.log 2>&1 &"` (logger globs newest ttyACM; recreate from N6-FACTS if /tmp was cleaned).
+3. `lsusb | grep df11` → then `PATH="$HOME/projects/stm32n6/.venv/bin:$HOME/STMicroelectronics/STM32CubeProgrammer/bin:$PATH" west flash -d build/t3-cam-vidpool` from the workspace.
+4. Pass criteria: IMX335 probed @ csi_i2c 0x1a, buffers dequeuing steadily, no DCMIPP overruns. If silent: FLEXRAM-as-pool is the prime suspect (pool region starts at 0x34000000 = FLEXRAM) — fallback is AXISRAM3–6 via RAMCFG (N6-FACTS § memory map).
+5. After first light: flash-boot the same config (plain board target) for a persistent demo; then update this file + TODO M1.
 
 ## DEFERRED
 

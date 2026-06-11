@@ -7,12 +7,14 @@ Each milestone is independently demo-able; don't start M(n+1) before M(n) passes
 - [x] capture sample builds for nucleo_n657x0_q + B-CAMS-IMX shield (RAM overlay fix)
 
 ## M1 — first light (camera frames over serial console)
-- [ ] USER: run `scripts/host-setup.sh` via `!` (sudo), re-plug board, re-login
-- [ ] USER: download STM32CubeProgrammer (Linux zip) from st.com → give path
-- [ ] install CubeProgrammer user-space, PATH, verify `STM32_SigningTool_CLI -v` + `STM32_Programmer_CLI --list`
-- [ ] rebuild (auto-sign) → BOOT1=1 → `west flash` → BOOT1=0 → reset
-- [ ] verify on console: IMX335 probed @ csi_i2c 0x1a, buffers dequeuing at stable fps, no DCMIPP overruns
-- [ ] try the `…/sb` serial-boot variant for the fast dev loop (no flash wear, ~seconds per iteration)
+- [x] USER: run `scripts/host-setup.sh` via `!` (sudo) ✅ 2026-06-10
+- [x] STM32CubeProgrammer 2.22 installed user-space (`~/STMicroelectronics`), signing + flashing verified ✅
+- [x] hello_world verified BOTH ways on hardware: flash-boot run mode + serial-boot DFU push ✅
+- [x] root-cause camera boot failures → BootROM 511 KB load window; correct fix = vidpool overlay; research consolidated in `docs/N6-FACTS.md` ✅
+- [ ] serial-boot `build/t3-cam-vidpool` (power cycle → `west flash`) → IMX335 probed @ csi_i2c 0x1a, buffers dequeuing at stable fps, no DCMIPP overruns
+- [ ] if pool-in-FLEXRAM faults: retry pool in AXISRAM3–6 (RAMCFG, N6-FACTS § memory map)
+- [ ] flash-boot the working config (plain board target) for a persistent demo
+- [ ] clean up `build/` experiment dirs; keep `cam-sb` naming from CLAUDE.md
 
 ## M2 — own application (`apps/camera-app`)
 - [ ] minimal app: init camera via video API, capture N frames, expose Zephyr shell cmds (snap/stats)
@@ -28,7 +30,7 @@ Each milestone is independently demo-able; don't start M(n+1) before M(n) passes
 - [ ] candidate demo: person/vehicle detection on live camera, compare NPU vs M55+Helium fps
 
 ## Housekeeping / opportunistic
-- [ ] upstream PR: nucleo_n657x0_q `zephyr,sram = &axisram1` (after M1 validates it on hardware)
+- [ ] upstream PR: capture-sample conf/overlay for nucleo_n657x0_q (upstream has NONE; the vidpool named-region pattern is the contribution — the old `zephyr,sram = &axisram1` idea was wrong, see N6-FACTS)
 - [ ] `ccache` wiring for faster rebuilds (installed by host-setup.sh; zephyr picks it up via `CCACHE` env or sdkconfig)
 - [ ] decide if/when this repo gets a GitHub remote (user call; local-only until asked)
 

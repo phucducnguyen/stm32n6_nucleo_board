@@ -1,0 +1,14 @@
+/*
+ * Big system RAM without FLEXRAM: the N6 BootROM cannot load an image into
+ * the first 400 KB of the axisram1 region (FLEXRAM is TCM-mapped at reset),
+ * so start at AXISRAM1 proper. 624K AXISRAM1 + 1M AXISRAM2 = 1648 KB.
+ */
+/ {
+	chosen {
+		zephyr,sram = &axisram1;
+	};
+};
+
+&axisram1 {
+	reg = <0x64000 DT_SIZE_K(1648)>;
+};
