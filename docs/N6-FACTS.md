@@ -48,7 +48,13 @@ STM32N657 has **no internal flash**. The on-chip BootROM always runs first and l
   while the device is actually dead — `STM32_Programmer_CLI` then **segfaults (exit -11)** right after the
   "File segment @0x00000001 is not 4-bytes aligned" notice. That message is cosmetic (0x1 is the N6 download-modifier,
   not an address); the segfault is the zombie device. Recovery: power cycle. **[verified on our board]**
+- A **refused** download — image linked outside the `0x34180400` window, so the BootROM rejects it with
+  "failed to download Sector[0]" — **also consumes the one-shot session and zombifies it.** The *next* push then
+  segfaults (exit -11), even though that next image is fine. So a single bad build costs *two* power cycles if you
+  don't catch it. **[verified on our board 2026-06-11]** Mitigation: `scripts/preflight-flash.sh` checks the link
+  address (and signed-bin/fit/DFU-armed) **before** pushing, so a non-loadable image never reaches the BootROM.
 - DFU device check before any push: `lsusb | grep df11`. CN8 must be plugged directly (no hub).
+- **Never `west flash` bare. Use `scripts/preflight-flash.sh build/<dir> --flash`** — it gates on all of the above.
 
 ## Board hardware (UM3417)
 

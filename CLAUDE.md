@@ -53,7 +53,14 @@ The boot ROM only executes **signed** images, chainloaded from external octo-SPI
 
 Jumper position 1 = the printed/silkscreen side = logic 0. Console: newest `/dev/ttyACM*` (renumbers on replug!) 115200 8N1.
 
-**Serial-boot session rules:** one download per power-up; RESET does NOT re-arm DFU — only a full power cycle (both cables out) does; check `lsusb | grep df11` before pushing; a zombie DFU entry makes `STM32_Programmer_CLI` segfault (exit -11) — that means power cycle, nothing is broken. Full detail: `docs/N6-FACTS.md`.
+**ALWAYS flash through the preflight gate — never bare `west flash`:**
+```sh
+scripts/preflight-flash.sh build/<dir> --flash    # verifies, then pushes only if it can load
+scripts/preflight-flash.sh build/<dir>            # verify-only, no hardware touched
+```
+It refuses to push an image that can't load, which is what burns power-cycle sessions. Checks: signed bin exists, image links into the BootROM window `0x34180400` (catches relink-overlay builds), fits 511 KB, and DFU is armed. Regression test: `scripts/test-preflight.sh` (run after editing the gate). Rationale below.
+
+**Serial-boot session rules:** one download per power-up; RESET does NOT re-arm DFU — only a full power cycle (both cables out) does; check `lsusb | grep df11` before pushing; a zombie DFU entry makes `STM32_Programmer_CLI` segfault (exit -11) — that means power cycle, nothing is broken. **A *refused* download (wrong link address → "failed to download Sector[0]") ALSO consumes the one-shot session and zombifies it** — so the very next push segfaults. That is exactly why preflight checks the link address *before* pushing. Full detail: `docs/N6-FACTS.md`.
 
 ## Invariants — do not break
 

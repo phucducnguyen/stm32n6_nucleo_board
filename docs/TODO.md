@@ -11,8 +11,10 @@ Each milestone is independently demo-able; don't start M(n+1) before M(n) passes
 - [x] STM32CubeProgrammer 2.22 installed user-space (`~/STMicroelectronics`), signing + flashing verified ✅
 - [x] hello_world verified BOTH ways on hardware: flash-boot run mode + serial-boot DFU push ✅
 - [x] root-cause camera boot failures → BootROM 511 KB load window; correct fix = vidpool overlay; research consolidated in `docs/N6-FACTS.md` ✅
-- [ ] serial-boot `build/t3-cam-vidpool` (power cycle → `west flash`) → IMX335 probed @ csi_i2c 0x1a, buffers dequeuing at stable fps, no DCMIPP overruns
-- [ ] if pool-in-FLEXRAM faults: retry pool in AXISRAM3–6 (RAMCFG, N6-FACTS § memory map)
+- [x] flash gate to stop wasting power-cycle sessions: `scripts/preflight-flash.sh` + `scripts/test-preflight.sh` ✅ 2026-06-11
+- [ ] **BLOCKER: camera build is silent before the console** (dies before `POST_KERNEL`, earlier than the camera drivers; memory layout ruled out — see HANDOVER CURRENT). Bisect which camera-DT node enabled at `PRE_KERNEL` faults (clock tree / pinctrl / csi_gpio hogs) — static diff cam-dbg vs hello-sb first, then minimal-DT bisection flashes
+- [ ] (if reachable) read SCB CFSR/HFSR+PC via ST-Link in serial-boot mode to locate the fault directly
+- [ ] once faulting node known: fix → IMX335 probed @ csi_i2c 0x1a, buffers dequeuing at stable fps, no DCMIPP overruns
 - [ ] flash-boot the working config (plain board target) for a persistent demo
 - [ ] clean up `build/` experiment dirs; keep `cam-sb` naming from CLAUDE.md
 
