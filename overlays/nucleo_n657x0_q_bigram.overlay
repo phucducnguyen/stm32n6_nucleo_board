@@ -1,0 +1,10 @@
+/*
+ * Use the full ~2 MB FLEXRAM+AXISRAM1+AXISRAM2 region as system RAM,
+ * same as the STM32N6570-DK FSBL variant does. The Nucleo board dts
+ * leaves zephyr,sram on the 511 KB axisram2, too small for video buffers.
+ */
+/ {
+	chosen {
+		zephyr,sram = &axisram1;
+	};
+};

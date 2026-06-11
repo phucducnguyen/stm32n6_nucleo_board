@@ -1,0 +1,10 @@
+# west-managed clones (pinned via west, not committed here)
+/zephyr/
+/modules/
+/.west/
+
+# local tooling & outputs
+/.venv/
+/build/
+__pycache__/
+*.pyc
