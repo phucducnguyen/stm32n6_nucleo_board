@@ -1,8 +1,55 @@
 # HANDOVER
 
-## CURRENT (2026-06-11)
+## CURRENT (2026-06-11 night)
 
-**State: board bring-up fully verified (hello_world runs both boot paths). Camera build loads and runs but is SILENT before the console — a genuine early-init fault, NOT a memory-layout problem. Next move needs fault data, not more blind flashes. A preflight flash gate now prevents the wasted-cycle mistakes that bit us.**
+**State: CAMERA FULLY WORKING, end to end.** The board runs the Zephyr UVC
+sample and is a standard USB webcam on atlas (`/dev/video0`); live browser
+stream via ustreamer at `http://10.0.0.150:8090/stream` (LAN, ufw rule added;
+also via Tailscale); on-demand AI scene description through hotchocolate's
+qwen3-vl. M1 "first light" is DONE and then some.
+
+The whole "silent boot" saga resolved as three stacked causes (full story:
+`docs/camera-bringup-debug-log.md`, traps codified in `CLAUDE.md` §Debugging):
+1. **Dead USB cable** — board logged fine all along; we debugged a ghost.
+2. **Log-drop trap** — `CONFIG_LOG_PRINTK=y` + deferred 1 KB buffer silently
+   ate ALL init-time output incl. the driver's own LOG_ERRs. Cure baked into
+   `overlays/debug-logging.conf` (`CONFIG_LOG_MODE_IMMEDIATE=y`).
+3. **Boot-timing race (REAL BUG, fix pending)** — fast boots hit the IMX335
+   before it's ready → init bails → 0 controls → link-freq -ENOTSUP → capture
+   aborts. Slow synchronous logging masks it. Proper fix = delay/retry in
+   sensor init; until then every camera build needs `debug-logging.conf`.
+
+**New canonical workflows (both committed):**
+- **Flash = `scripts/swd-run.sh build/<dir>`** — BOOT1 jumper parked in dev
+  boot; hard-reset + RAM load + VTOR/MSP/PC + run over ST-Link. No power
+  cycles, no DFU, no signing. Hard-won: **only `-hardRst`** — a software
+  `-rst` bricks AP1 until the next hardware reset. Serial-boot DFU
+  (`preflight-flash.sh`) stays for flash-boot shipping only.
+- **Webcam demo:** `scripts/cam-stream.sh` (ustreamer, apt-installed, :8090)
+  and `scripts/cam-describe.sh ["prompt"]` (one frame → qwen3-vl → text; GPU
+  used ONLY on demand — user explicitly wants no background AI).
+
+**Working builds:** `build/uvc` (UVC webcam, VGA, 30 dB gain) ·
+`build/cam-trace-clean` (capture sample + pixel-stats, 30 fps verified).
+UVC needs the 1.25 MB pool configs to advertise 640x480 (else only 48x31).
+
+**Temp edits in the pinned `zephyr/` tree (6 files, do NOT commit there):**
+printk markers (video_common/video_ctrls/imx335/dcmipp/capture-main) + UVC
+main.c (controls include + 30 dB ANALOGUE_GAIN default — 0 dB = near-black).
+Revert command + per-file list: `docs/camera-bringup-debug-log.md`.
+
+**NEXT SESSION candidates:** (1) fix the timing race properly (then drop
+debug-logging.conf + revert markers; upstream-worthy), (2) white balance for
+the green cast (DCMIPP pipeline config) + focus the lens ring, (3) GitHub
+remote (user creates repo — do NOT add remotes unasked), (4) `sudo ufw delete`
+the dead 8091 rule, (5) ustreamer as a systemd unit if the stream becomes
+permanent.
+
+---
+
+### Previous session state (2026-06-11 morning, superseded)
+
+**State then: board bring-up verified; camera build SILENT before the console — believed to be an early-init fault.** (Reality: dead cable + log drops, see above.)
 
 What's proven on hardware:
 - Full chain works: build → auto-sign (CubeProgrammer 2.22 user-space at `~/STMicroelectronics`) → flash-boot run (hello banner) AND serial-boot push (`//sb` + DFU on CN8 → banner, ~5 s loop).
@@ -20,11 +67,7 @@ New serial-boot facts learned this session (now in N6-FACTS + CLAUDE.md):
 
 **Full investigation log + everything ruled out: `docs/camera-bringup-debug-log.md` — READ THAT FIRST, don't repeat experiments.** Ruled out so far: memory layout, clock tree, jumpers/power, the IMX335 sensor, shell buffering, and SWD debugging (debug port locked in serial boot).
 
-**NEXT SESSION — start here (one power cycle):**
-1. `scripts/preflight-flash.sh build/cam-trace-clean --flash` — this build is BUILT + signed + waiting. It has `printk` boot probes + DCMIPP-step markers (shell off → direct output).
-2. Capture console via the reliable method: background `sg dialout -c "stty -F /dev/ttyACM0 115200 raw -echo; cat /dev/ttyACM0 > /tmp/x.log"` started before the flash. (serlog3.py was flaky — exit 144.)
-3. Interpret the `DBGMARK` lines per the table in the debug log: tells us if the console works at all, how far boot gets, and exactly where the DCMIPP init stalls (prime suspect `HAL_DCMIPP_Init`).
-4. Temporary debug edits live in the pinned `zephyr/` tree (dcmipp markers + sample SYS_INIT probes) — revert when done: `git -C zephyr checkout drivers/video/video_stm32_dcmipp.c samples/drivers/video/capture/src/main.c`.
+(The "next session" plan from this state was executed the same evening — see CURRENT above.)
 
 ## DEFERRED
 

@@ -53,7 +53,17 @@ The boot ROM only executes **signed** images, chainloaded from external octo-SPI
 
 Jumper position 1 = the printed/silkscreen side = logic 0. Console: newest `/dev/ttyACM*` (renumbers on replug!) 115200 8N1.
 
-**ALWAYS flash through the preflight gate — never bare `west flash`:**
+**Dev loop (PRIMARY since 2026-06-11): dev boot + `scripts/swd-run.sh`.**
+With BOOT1 parked on the unprinted side (dev boot), SWD stays open and:
+```sh
+scripts/swd-run.sh build/<dir>    # hard-reset, load RAM @0x34180400, set VTOR/MSP/PC, run
+```
+gives unlimited flashes — no power cycles, no DFU, no signing — plus debugger
+access. Gotcha (in the script): only `-hardRst`; a software `-rst` bricks AP1
+until the next hardware reset. Serial-boot DFU below is for flash-boot
+shipping / when jumpers are in serial-boot position.
+
+**Serial-boot flashing: ALWAYS through the preflight gate — never bare `west flash`:**
 ```sh
 scripts/preflight-flash.sh build/<dir> --flash    # verifies, then pushes only if it can load
 scripts/preflight-flash.sh build/<dir>            # verify-only, no hardware touched
