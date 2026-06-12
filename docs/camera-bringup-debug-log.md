@@ -123,7 +123,11 @@ so this board's camera path is essentially first-run / untested upstream.
 ## Temporary debug instrumentation (applied, in the pinned `zephyr/` tree)
 
 These are NOT committed and must be reverted once debugging concludes
-(`git -C zephyr checkout drivers/video/video_common.c drivers/video/video_ctrls.c drivers/video/imx335.c drivers/video/video_stm32_dcmipp.c samples/drivers/video/capture/src/main.c`):
+(`git -C zephyr checkout drivers/video/video_common.c drivers/video/video_ctrls.c drivers/video/imx335.c drivers/video/video_stm32_dcmipp.c samples/drivers/video/capture/src/main.c samples/subsys/usb/uvc/src/main.c`):
+
+0. `samples/subsys/usb/uvc/src/main.c`: +video-controls.h include and a
+   30 dB ANALOGUE_GAIN default (IMX335 defaults to 0 dB = near-black indoors).
+   If reverted, dark scenes return — consider making this a proper Kconfig.
 
 1. `drivers/video/video_stm32_dcmipp.c` `stm32_dcmipp_init`: `printk("DBGMARK
    dcmipp: ...")` after enter / clocks / reset_dcmipp / reset_csi / irq / HAL.
