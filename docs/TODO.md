@@ -36,6 +36,12 @@ Each milestone is independently demo-able; don't start M(n+1) before M(n) passes
 - [ ] STM32Cube.AI / X-CUBE-N6 evaluation for Neural-ART NPU (NOT Zephyr — keep in its own dir/repo)
 - [ ] candidate demo: person/vehicle detection on live camera, compare NPU vs M55+Helium fps
 
+> **Bigger picture (2026-06-12):** this project is the *perception-node lane* of the
+> **Nebula Edge Kit** platform (Nanos as BLE sensor tags, atlas as event server, GPU
+> boxes as the training flywheel, future carrier-shield PCB). Platform plan:
+> `second-brain/projects/edge-kit/PLAN.md` (in the vault). M4 here ≈ Edge Kit "E2b";
+> this repo's M-ladder continues unchanged and stays self-contained.
+
 ## Housekeeping / opportunistic
 - [ ] upstream PR: capture-sample conf/overlay for nucleo_n657x0_q (upstream has NONE; the vidpool named-region pattern is the contribution — the old `zephyr,sram = &axisram1` idea was wrong, see N6-FACTS)
 - [ ] `ccache` wiring for faster rebuilds (installed by host-setup.sh; zephyr picks it up via `CCACHE` env or sdkconfig)
