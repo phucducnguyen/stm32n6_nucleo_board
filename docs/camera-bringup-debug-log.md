@@ -47,6 +47,12 @@ than shipping the logging change as the fix.**
    Fix: `overlays/debug-logging.conf` (`CONFIG_LOG_MODE_IMMEDIATE=y`), now
    baked into `cam-trace-clean`. Build args:
    `west build -b nucleo_n657x0_q//sb -d build/cam-trace-clean zephyr/samples/drivers/video/capture -- -DEXTRA_DTC_OVERLAY_FILE=.../overlays/nucleo_n657x0_q_vidpool.overlay -DEXTRA_CONF_FILE=.../overlays/debug-logging.conf`
+   The UVC webcam sample (`build/uvc`, superseded by `apps/camera-app` on
+   2026-06-12) was built the same way plus
+   `--shield st_b_cams_imx_mb1854 -DCONFIG_VIDEO_BUFFER_POOL_HEAP_SIZE=1250000
+   -DCONFIG_VIDEO_BUFFER_POOL_ZEPHYR_REGION=y
+   -DCONFIG_VIDEO_BUFFER_POOL_ZEPHYR_REGION_NAME='"AXISRAM1"'`
+   (the 1.25 MB pool is what makes it advertise 640x480 instead of 48x31).
 4. Parked (separate, later): `<err> iocell: HSLV configuration for "vddio3"
    blocked by OTP fuse` at t=0 — CSI pin IO-voltage mode; may matter for real
    MIPI capture *after* the link-freq bug is fixed.
@@ -127,7 +133,10 @@ These are NOT committed and must be reverted once debugging concludes
 
 0. `samples/subsys/usb/uvc/src/main.c`: +video-controls.h include and a
    30 dB ANALOGUE_GAIN default (IMX335 defaults to 0 dB = near-black indoors).
-   If reverted, dark scenes return — consider making this a proper Kconfig.
+   **SUPERSEDED 2026-06-12 by `apps/camera-app`** (gain is the Kconfig
+   `APP_CAMERA_ANALOGUE_GAIN_MDB` there). Revert this sample edit once
+   camera-app is verified on hardware — kept until then so the known-good
+   `build/uvc` can be rebuilt bit-identical if the app misbehaves.
 
 1. `drivers/video/video_stm32_dcmipp.c` `stm32_dcmipp_init`: `printk("DBGMARK
    dcmipp: ...")` after enter / clocks / reset_dcmipp / reset_csi / irq / HAL.

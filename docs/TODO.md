@@ -21,9 +21,11 @@ Each milestone is independently demo-able; don't start M(n+1) before M(n) passes
 
 ## M2 — own application (`apps/camera-app`) — frame export landed early via UVC
 - [x] frame export path for eyeballing images on atlas: USB webcam (Zephyr UVC sample → `build/uvc`, VGA needs the 1.25 MB pool configs) + ustreamer browser stream (`scripts/cam-stream.sh`, :8090) + on-demand AI description (`scripts/cam-describe.sh`) ✅ 2026-06-11
-- [ ] minimal app: init camera via video API, capture N frames, expose Zephyr shell cmds (snap/stats)
+- [x] `apps/camera-app` created — UVC sample forked + owned (shield/overlay/configs self-contained, encoder dead code stripped, `app_usbd.c` replaces sample helpers); builds clean, 135 KB in the 511 KB window ✅ 2026-06-12
+- [ ] **flash `build/camera-app` via swd-run.sh + verify webcam/stream on hardware** (board was unplugged 2026-06-12) — then revert the two sample-file temp edits in `zephyr/`
+- [ ] extend the app: Zephyr shell cmds (snap/stats), capture-N-frames mode
 - [ ] white balance for the green cast (DCMIPP pipeline config) + manual lens focus
-- [ ] make the 30 dB gain default a proper Kconfig/app setting (currently a temp edit in the UVC sample)
+- [x] make the 30 dB gain default a proper Kconfig/app setting — `CONFIG_APP_CAMERA_ANALOGUE_GAIN_MDB` in camera-app ✅ 2026-06-12
 - [ ] decide+document frame geometry: DCMIPP crop/downscale config vs RAM budget (full 5 MP never fits internal SRAM)
 
 ## M3 — processing on target (firmware-engineer muscle)

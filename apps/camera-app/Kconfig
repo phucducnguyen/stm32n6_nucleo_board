@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# camera-app options. The APP_USBD_* options replace the Zephyr-tree
+# SAMPLE_USBD_* ones (those are sample-scoped and off-limits to applications).
+
+menu "Camera app configuration"
+
+config APP_USBD_MANUFACTURER
+	string "USB device manufacturer string"
+	default "pdnguyen"
+
+config APP_USBD_PRODUCT
+	string "USB device product string"
+	default "STM32N6 IMX335 camera"
+
+config APP_USBD_VID
+	hex "USB device Vendor ID"
+	default 0x2fe3
+	help
+	  0x2fe3 is the Zephyr Project VID — acceptable for local/dev use on
+	  our own machines only; a real product must use its own VID.
+
+config APP_USBD_PID
+	hex "USB device Product ID"
+	default 0x0011
+
+config APP_USBD_SELF_POWERED
+	bool "Set the Self-powered attribute"
+	default y
+
+config APP_USBD_REMOTE_WAKEUP
+	bool "Set the Remote Wakeup attribute"
+
+config APP_USBD_MAX_POWER
+	int "bMaxPower value (2 mA units)"
+	default 125
+	range 0 250
+
+config APP_VIDEO_MAX_RESOLUTIONS
+	int "Maximum number of advertised resolutions"
+	default 5
+	help
+	  Cap on how many resolutions are advertised to the USB host when the
+	  camera supports a range. Each advertised format must also fit the
+	  video buffer pool, so the effective list is usually shorter.
+
+config APP_CAMERA_ANALOGUE_GAIN_MDB
+	int "Initial analogue gain (mdB)"
+	default 30000
+	range 0 72000
+	help
+	  Applied once at startup via VIDEO_CID_ANALOGUE_GAIN. The IMX335
+	  powers up at 0 dB, which is near-black indoors; 30 dB (30000) is a
+	  usable indoor default. The sensor step is 300 mdB. Set 0 to leave
+	  the sensor at its power-up default.
+
+endmenu
+
+source "Kconfig.zephyr"

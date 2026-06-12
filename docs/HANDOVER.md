@@ -1,12 +1,37 @@
 # HANDOVER
 
-## CURRENT (2026-06-11 night)
+## CURRENT (2026-06-12)
 
-**State: CAMERA FULLY WORKING, end to end.** The board runs the Zephyr UVC
-sample and is a standard USB webcam on atlas (`/dev/video0`); live browser
-stream via ustreamer at `http://10.0.0.150:8090/stream` (LAN, ufw rule added;
-also via Tailscale); on-demand AI scene description through hotchocolate's
-qwen3-vl. M1 "first light" is DONE and then some.
+**State: camera working (M1 done); `apps/camera-app` created and built —
+AWAITING HARDWARE VERIFY (board was unplugged, user away).**
+
+**This session (2026-06-12): the UVC sample became our own application.**
+`apps/camera-app/` = self-contained fork of `zephyr/samples/subsys/usb/uvc`:
+shield in CMakeLists, vidpool+uvc node in `app.overlay`, pool/sync-logging
+configs in `prj.conf`, USB identity owned (`src/app_usbd.c` + `APP_USBD_*`,
+enumerates as "STM32N6 IMX335 camera"), encoder dead code stripped, gain now
+`CONFIG_APP_CAMERA_ANALOGUE_GAIN_MDB` (default 30 dB). Build is now just
+`west build -p -b 'nucleo_n657x0_q//sb' apps/camera-app -d build/camera-app`.
+Built clean: 135 KB in the 511 KB window, links at 0x34180400, 1.25 MB pool
+in runtime-only AXISRAM1 (verified in the ELF headers + .config).
+
+**FIRST THING NEXT SESSION (board plugged in, BOOT1 still in dev boot):**
+1. `scripts/swd-run.sh build/camera-app` (CubeProgrammer bin dir on PATH)
+2. verify: `lsusb` shows "STM32N6 IMX335 camera", `/dev/video0` does 640x480,
+   `scripts/cam-stream.sh` serves, image not black (gain applied, check
+   console log line "Analogue gain set to 30000 mdB")
+3. only THEN: `git -C zephyr checkout samples/subsys/usb/uvc/src/main.c
+   samples/drivers/video/capture/src/main.c` (the 4 driver-file DBGMARK
+   edits stay until the timing-race fix)
+
+### Prior state (2026-06-11 night) — still true
+
+**CAMERA FULLY WORKING, end to end.** The board runs the Zephyr UVC
+sample (`build/uvc` — known-good fallback binary, do not delete) and is a
+standard USB webcam on atlas (`/dev/video0`); live browser stream via
+ustreamer at `http://10.0.0.150:8090/stream` (LAN, ufw rule added; also via
+Tailscale); on-demand AI scene description through hotchocolate's qwen3-vl.
+M1 "first light" is DONE and then some.
 
 The whole "silent boot" saga resolved as three stacked causes (full story:
 `docs/camera-bringup-debug-log.md`, traps codified in `CLAUDE.md` §Debugging):
@@ -35,11 +60,13 @@ UVC needs the 1.25 MB pool configs to advertise 640x480 (else only 48x31).
 
 **Temp edits in the pinned `zephyr/` tree (6 files, do NOT commit there):**
 printk markers (video_common/video_ctrls/imx335/dcmipp/capture-main) + UVC
-main.c (controls include + 30 dB ANALOGUE_GAIN default — 0 dB = near-black).
-Revert command + per-file list: `docs/camera-bringup-debug-log.md`.
+main.c (controls include + 30 dB ANALOGUE_GAIN default — superseded by
+camera-app's Kconfig; revert the two sample files after camera-app passes on
+hardware). Revert command + per-file list: `docs/camera-bringup-debug-log.md`.
 
-**NEXT SESSION candidates:** (1) fix the timing race properly (then drop
-debug-logging.conf + revert markers; upstream-worthy), (2) white balance for
+**NEXT SESSION candidates (after the camera-app hardware verify above):**
+(1) fix the timing race properly (then drop the sync-logging requirement +
+revert the 4 driver markers; upstream-worthy), (2) white balance for
 the green cast (DCMIPP pipeline config) + focus the lens ring, (3) GitHub
 remote (user creates repo — do NOT add remotes unasked), (4) `sudo ufw delete`
 the dead 8091 rule, (5) ustreamer as a systemd unit if the stream becomes

@@ -23,23 +23,25 @@ Host has **no system cmake/ninja/gperf/dtc** — everything lives in `.venv`. To
 
 ## Build
 
-Always with the venv on PATH (west sub-tools resolve `cmake` by name):
+Always with the venv on PATH (west sub-tools resolve `cmake` by name).
+
+**Primary: our application `apps/camera-app/`** (UVC webcam; forked from the
+upstream uvc sample 2026-06-12 — shield, vidpool overlay, pool configs,
+sync-logging and startup gain are all owned by the app, so no `-D` flags):
 
 ```sh
 cd ~/projects/stm32n6
 export PATH="$PWD/.venv/bin:$PATH"
-west build -p -b 'nucleo_n657x0_q//sb' --shield st_b_cams_imx_mb1854 \
-  zephyr/samples/drivers/video/capture -d build/cam-sb -- \
-  -DEXTRA_DTC_OVERLAY_FILE="$PWD/overlays/nucleo_n657x0_q_vidpool.overlay" \
-  -DCONFIG_VIDEO_FRAME_WIDTH=640 -DCONFIG_VIDEO_FRAME_HEIGHT=480 \
-  -DCONFIG_VIDEO_PIXEL_FORMAT='"RGBP"' \
-  -DCONFIG_VIDEO_BUFFER_POOL_HEAP_SIZE=1250000 \
-  -DCONFIG_VIDEO_BUFFER_POOL_ZEPHYR_REGION=y \
-  -DCONFIG_VIDEO_BUFFER_POOL_ZEPHYR_REGION_NAME='"AXISRAM1"' \
-  -DCONFIG_MAIN_STACK_SIZE=2048
+west build -p -b 'nucleo_n657x0_q//sb' apps/camera-app -d build/camera-app
 ```
 
-(drop the `//sb` and use the plain board name for the flash-boot build; same overlay/configs)
+(drop the `//sb` and use the plain board name for the flash-boot build)
+
+Upstream samples can still be built as references; they need the full flag set
+on the command line — `--shield st_b_cams_imx_mb1854`,
+`-DEXTRA_DTC_OVERLAY_FILE="$PWD/overlays/nucleo_n657x0_q_vidpool.overlay"`,
+`-DEXTRA_CONF_FILE="$PWD/overlays/debug-logging.conf"`, plus pool/format
+configs — exact capture/uvc commands in `docs/camera-bringup-debug-log.md`.
 
 ## Flash / run (STM32N6 has NO internal flash — read this)
 
