@@ -3,9 +3,17 @@
 Single source of truth for the IMX335 camera "silent boot" investigation so we
 never re-run an experiment we already did. Read this before touching the camera.
 
-**Status (2026-06-11): camera firmware loads + runs but emits ZERO console
-output. Board itself is 100% fine. Root cause NOT yet found, but large swaths
-ruled out. The next concrete step is built and waiting: `build/cam-trace-clean`.**
+**Status (2026-06-11 night): CAMERA STREAMS. 640x480 RGBP @ 30 fps, 1000+
+frames, zero errors — with `CONFIG_LOG_MODE_IMMEDIATE=y`. The only change vs
+the failing build was synchronous logging ⇒ the original failure is a
+BOOT-TIMING RACE: with fast deferred logging, imx335 init hits the sensor too
+early, bails, controls never register, link-freq → -ENOTSUP. Slow synchronous
+logging spaces init out and everything works. Pixel-content not yet verified
+(could be black frames) — `build/cam-trace-clean` now adds a 1/sec
+`DBGMARK pixels: min/max/avg` printk; flash it next power cycle. After that:
+pin down the exact race (rebuild with deferred logging + 32 KB log buffer to
+see the original bail point at original timing) and fix it properly rather
+than shipping the logging change as the fix.**
 
 ---
 
@@ -13,9 +21,35 @@ ruled out. The next concrete step is built and waiting: `build/cam-trace-clean`.
 
 1. Power cycle → `scripts/preflight-flash.sh build/cam-trace-clean --flash`.
 2. Capture console with the **reliable** method (see "Serial capture" below).
-3. Read the `DBGMARK` lines and interpret with the table in "The probe build".
-   That single flash tells us whether the console even works in a camera build,
-   how far boot gets, and where the DCMIPP init stalls.
+3. The build logs synchronously (nothing dropped): read the boot output from
+   t=0 — the driver's own `LOG_ERR`s plus `DBGMARK imx335_init` step markers
+   show exactly where sensor init bails before registering controls.
+
+## 2026-06-11 BREAKTHROUGHS — read before trusting older sections
+
+1. **The whole "silent boot" mystery was a bad USB cable** (plus the flaky
+   serlog3.py logger). With a good cable + plain `cat` capture, every camera
+   build prints full logs. All hang hypotheses (memory/clock/POST_KERNEL) were
+   chasing a ghost; older sections below are kept only for the ruled-out table.
+2. **Real failure chain (proven by instrumented runs):** sample main() runs →
+   set_fmt I2C writes to the sensor SUCCEED (sensor + bus fine) → stream start
+   → `stm32_dcmipp_conf_csi` → `video_get_csi_link_freq(camera@1a)` → both
+   LINK_FREQ and PIXEL_RATE `video_get_ctrl` return -134 (-ENOTSUP) → "Failed
+   to retrieve source link-frequency" → capture aborts. `video_find_ctrl` sees
+   the imx335 vdev (0x341935b4) with **0 controls, src_dev=NULL** —
+   `imx335_init_controls` never completed.
+3. **LOG-DROP TRAP — invalidates "marker didn't print → code didn't run" for
+   init-time code.** The sample config has `CONFIG_LOG_PRINTK=y` +
+   `CONFIG_LOG_MODE_DEFERRED=y` + 1 KB log buffer + VIDEO_LOG_LEVEL_DBG. So
+   printk is NOT synchronous here: it's rerouted into the deferred buffer,
+   which the I2C debug dumps overflow instantly → `--- 58 messages dropped ---`
+   ate ALL boot-time output, including driver `LOG_ERR`s and our markers.
+   Fix: `overlays/debug-logging.conf` (`CONFIG_LOG_MODE_IMMEDIATE=y`), now
+   baked into `cam-trace-clean`. Build args:
+   `west build -b nucleo_n657x0_q//sb -d build/cam-trace-clean zephyr/samples/drivers/video/capture -- -DEXTRA_DTC_OVERLAY_FILE=.../overlays/nucleo_n657x0_q_vidpool.overlay -DEXTRA_CONF_FILE=.../overlays/debug-logging.conf`
+4. Parked (separate, later): `<err> iocell: HSLV configuration for "vddio3"
+   blocked by OTP fuse` at t=0 — CSI pin IO-voltage mode; may matter for real
+   MIPI capture *after* the link-freq bug is fixed.
 
 ---
 
@@ -89,12 +123,18 @@ so this board's camera path is essentially first-run / untested upstream.
 ## Temporary debug instrumentation (applied, in the pinned `zephyr/` tree)
 
 These are NOT committed and must be reverted once debugging concludes
-(`git -C zephyr checkout drivers/video/video_stm32_dcmipp.c samples/drivers/video/capture/src/main.c`):
+(`git -C zephyr checkout drivers/video/video_common.c drivers/video/video_ctrls.c drivers/video/imx335.c drivers/video/video_stm32_dcmipp.c samples/drivers/video/capture/src/main.c`):
 
 1. `drivers/video/video_stm32_dcmipp.c` `stm32_dcmipp_init`: `printk("DBGMARK
    dcmipp: ...")` after enter / clocks / reset_dcmipp / reset_csi / irq / HAL.
 2. `samples/drivers/video/capture/src/main.c`: two `SYS_INIT` probes printing
    `DBGMARK boot: PRE_KERNEL_2 alive` and `DBGMARK boot: APPLICATION alive`.
+3. `drivers/video/video_common.c` `video_get_csi_link_freq`: `DBGMARK linkfreq`
+   printks (src/bpp/lanes, LINK_FREQ ret, PIXEL_RATE ret, result).
+4. `drivers/video/video_ctrls.c` `video_find_ctrl` + `video_init_ctrl`:
+   `DBGMARK findctrl` / `DBGMARK initctrl` printks (vdev, ctrl ids, counts).
+5. `drivers/video/imx335.c` `imx335_init`: `DBGMARK imx335_init` step markers
+   (ENTER, i2c-ready, BAIL at each early return, "all steps ok").
 
 `build/cam-trace-clean` already has these baked in — flash it directly; no
 rebuild needed (a `-p` rebuild after a revert would lose the markers).

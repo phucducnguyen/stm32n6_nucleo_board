@@ -103,6 +103,26 @@ Only the DK's *chainloaded* (MCUboot) variant runs from `axisram1`; the Nucleo h
   `csi_connector` — the Nucleo defines all of them; sensor at I2C addr 0x1a.
 - STM32CubeProgrammer **≥ 2.18** required for N6 (we run 2.22.0, user-space at `~/STMicroelectronics/STM32CubeProgrammer`).
 
+## Console & logging traps **[verified on our board 2026-06-11]**
+
+- **`CONFIG_LOG_PRINTK=y` (the Zephyr default when LOG is on) makes printk
+  asynchronous**: it goes into the deferred log buffer, NOT straight to the UART.
+  With the video sample's 1 KB buffer + `VIDEO_LOG_LEVEL_DBG` I2C dumps, ALL
+  boot-time messages (driver `LOG_ERR`s included) are overwritten before the log
+  thread drains them → `--- 58 messages dropped ---`. Absence of output proves
+  NOTHING about whether code ran. Cure: `overlays/debug-logging.conf`
+  (`CONFIG_LOG_MODE_IMMEDIATE=y`) — synchronous, lossless, slower boot.
+- **A dead USB cable produces exactly the same symptom as a firmware hang**
+  (zero console output while DFU/power LEDs look normal — the bad cable still
+  carried enough for some enumeration). Burn-in lesson: prove cable + console
+  with a known-good image (`build/hello-sb`) before forming firmware theories.
+- **Boot speed is load-bearing**: the IMX335 camera bring-up failed ONLY with
+  fast (deferred-log) boots — sensor init ran before the sensor was ready, bailed,
+  left 0 controls registered → `video_get_csi_link_freq` -ENOTSUP → capture
+  abort. Synchronous logging slows POST_KERNEL enough to mask it. The camera
+  streamed 640x480 RGBP @ 30 fps once logging was immediate. Proper fix (delay/
+  retry in sensor init) pending — see `docs/camera-bringup-debug-log.md`.
+
 ## Canonical workflows on atlas **[verified on our board]**
 
 Serial-boot dev loop (fast, RAM-only):

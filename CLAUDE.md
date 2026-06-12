@@ -62,6 +62,30 @@ It refuses to push an image that can't load, which is what burns power-cycle ses
 
 **Serial-boot session rules:** one download per power-up; RESET does NOT re-arm DFU — only a full power cycle (both cables out) does; check `lsusb | grep df11` before pushing; a zombie DFU entry makes `STM32_Programmer_CLI` segfault (exit -11) — that means power cycle, nothing is broken. **A *refused* download (wrong link address → "failed to download Sector[0]") ALSO consumes the one-shot session and zombifies it** — so the very next push segfaults. That is exactly why preflight checks the link address *before* pushing. Full detail: `docs/N6-FACTS.md`.
 
+## Debugging — hard-won rules (cost us days; do NOT relearn)
+
+Full story: `docs/camera-bringup-debug-log.md`. The three traps, in order of pain:
+
+1. **printk is NOT synchronous in this project's builds.** The video sample sets
+   `CONFIG_LOG_PRINTK=y` + deferred logging + a 1 KB buffer, so printk is rerouted
+   into the log buffer and **boot-time output silently vanishes**
+   (`--- N messages dropped ---`). "My marker didn't print, so the code didn't run"
+   is INVALID for init-time code unless the build has
+   `-DEXTRA_CONF_FILE=$PWD/overlays/debug-logging.conf`
+   (`CONFIG_LOG_MODE_IMMEDIATE=y` — synchronous, nothing droppable).
+   **Any boot/init debugging starts with that fragment. No exceptions.**
+2. **Verify the physical layer before debugging firmware.** The multi-session
+   "camera build is totally silent" mystery was a dead USB cable. Before any
+   "no output" theory: swap the cable, then prove the console with a known-good
+   image (`build/hello-sb`). A logger script is not proof — use the raw capture:
+   `sg dialout -c "stty -F /dev/ttyACM0 115200 raw -echo; cat /dev/ttyACM0 > /tmp/x.log"`
+   started in the background BEFORE flashing (serlog3.py was flaky — don't use it).
+3. **Timing races hide behind logging changes.** The camera failure itself was a
+   boot-timing race (fast deferred-log boot hits the IMX335 before it's ready →
+   init bails → 0 controls → link-freq -ENOTSUP). Synchronous logging slows boot
+   and masks it. If behavior changes when logging config changes, suspect a race,
+   not the logs.
+
 ## Invariants — do not break
 
 - **The BootROM loads images ONLY into the 511 KB window at `0x34180400` (axisram2) — flash boot AND serial boot.** Every image must link there (= the stock `zephyr,sram`). `overlays/nucleo_n657x0_q_bigram.overlay` and `_axisram_noflex.overlay` (relink to axisram1) are **dead ends kept as documentation** — downloads outside the window are refused, flash-boot images linked elsewhere die silently.
