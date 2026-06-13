@@ -1,28 +1,42 @@
 # HANDOVER
 
-## CURRENT (2026-06-12)
+## CURRENT (2026-06-13)
 
-**State: camera working (M1 done); `apps/camera-app` created and built —
-AWAITING HARDWARE VERIFY (board was unplugged, user away).**
+**State: `apps/camera-app` is now our verified primary firmware — HARDWARE
+VERIFY PASSED 2026-06-13. M1 done, the app fork is done and proven on silicon.**
 
-**This session (2026-06-12): the UVC sample became our own application.**
-`apps/camera-app/` = self-contained fork of `zephyr/samples/subsys/usb/uvc`:
-shield in CMakeLists, vidpool+uvc node in `app.overlay`, pool/sync-logging
-configs in `prj.conf`, USB identity owned (`src/app_usbd.c` + `APP_USBD_*`,
-enumerates as "STM32N6 IMX335 camera"), encoder dead code stripped, gain now
-`CONFIG_APP_CAMERA_ANALOGUE_GAIN_MDB` (default 30 dB). Build is now just
+**Hardware verify (2026-06-13, board plugged in):** flashed
+`build/camera-app` via `scripts/swd-run.sh` → clean boot, and all four checks
+passed:
+- `lsusb` → `2fe3:0011 STM32N6 IMX335 camera` (our owned USB identity).
+- Host negotiated `YUYV 640x480`; `/dev/video0` live at 20 fps (ustreamer).
+- Console logged `Analogue gain set to 30000 mdB` (our
+  `CONFIG_APP_CAMERA_ANALOGUE_GAIN_MDB`), link-freq resolved (990 MHz),
+  capture started, no crash.
+- Stream live + updating (3 snapshots had distinct pixel hashes → sensor is
+  genuinely capturing; frames were dark only because the bench was unlit).
+Post-verify the two forked sample files were reverted
+(`git -C zephyr checkout samples/subsys/usb/uvc/src/main.c
+samples/drivers/video/capture/src/main.c`) — DONE. The 4 driver-file DBGMARK
+edits remain (gated on the imx335 timing-race fix, see NEXT).
+
+**The app fork (2026-06-12):** `apps/camera-app/` = self-contained fork of
+`zephyr/samples/subsys/usb/uvc`: shield in CMakeLists, vidpool+uvc node in
+`app.overlay`, pool/sync-logging configs in `prj.conf`, USB identity owned
+(`src/app_usbd.c` + `APP_USBD_*`), encoder dead code stripped, gain now
+`CONFIG_APP_CAMERA_ANALOGUE_GAIN_MDB` (default 30 dB). Build is just
 `west build -p -b 'nucleo_n657x0_q//sb' apps/camera-app -d build/camera-app`.
-Built clean: 135 KB in the 511 KB window, links at 0x34180400, 1.25 MB pool
-in runtime-only AXISRAM1 (verified in the ELF headers + .config).
+135 KB in the 511 KB window, links at 0x34180400, 1.25 MB pool in
+runtime-only AXISRAM1.
 
-**FIRST THING NEXT SESSION (board plugged in, BOOT1 still in dev boot):**
-1. `scripts/swd-run.sh build/camera-app` (CubeProgrammer bin dir on PATH)
-2. verify: `lsusb` shows "STM32N6 IMX335 camera", `/dev/video0` does 640x480,
-   `scripts/cam-stream.sh` serves, image not black (gain applied, check
-   console log line "Analogue gain set to 30000 mdB")
-3. only THEN: `git -C zephyr checkout samples/subsys/usb/uvc/src/main.c
-   samples/drivers/video/capture/src/main.c` (the 4 driver-file DBGMARK
-   edits stay until the timing-race fix)
+**NEXT (M2 — the real remaining bug): imx335 boot-timing race.** Fast boots
+hit the IMX335 before it's ready → init bails → 0 controls → link-freq
+-ENOTSUP → capture aborts. Today it's masked by `CONFIG_LOG_MODE_IMMEDIATE=y`
+(slow synchronous logging = enough delay). Proper fix = a delay/retry in the
+sensor init path (`zephyr/drivers/video/imx335.c`), after which the
+debug-logging requirement drops and the 4 driver DBGMARK markers revert.
+Board is on — this is the session to chase it. See
+`docs/camera-bringup-debug-log.md`.
 
 ### Prior state (2026-06-11 night) — still true
 
