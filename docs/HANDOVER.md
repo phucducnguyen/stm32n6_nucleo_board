@@ -29,14 +29,20 @@ edits remain (gated on the imx335 timing-race fix, see NEXT).
 135 KB in the 511 KB window, links at 0x34180400, 1.25 MB pool in
 runtime-only AXISRAM1.
 
-**NEXT (M2 — the real remaining bug): imx335 boot-timing race.** Fast boots
-hit the IMX335 before it's ready → init bails → 0 controls → link-freq
--ENOTSUP → capture aborts. Today it's masked by `CONFIG_LOG_MODE_IMMEDIATE=y`
-(slow synchronous logging = enough delay). Proper fix = a delay/retry in the
-sensor init path (`zephyr/drivers/video/imx335.c`), after which the
-debug-logging requirement drops and the 4 driver DBGMARK markers revert.
-Board is on — this is the session to chase it. See
-`docs/camera-bringup-debug-log.md`.
+**NEXT (M2 — imx335 boot-timing race): CHARACTERIZED 2026-06-13, fix specified,
+validation gated on physical flash-boot.** Chased it with the board on: built a
+deferred-logging / fast-timing repro (`overlays/fastlog-repro.conf`,
+`build/camera-app-fastlog`) and it streamed fine — the race did NOT reproduce
+over SWD dev-boot. Reason: dev-boot only resets the M33 core; the board stays
+powered, so the IMX335 is warm (rails + INCK already settled) when init runs.
+The race is **cold-power-on only** (flash-boot), so logging speed was a confound,
+not the cause. **Reproducing/validating the fix needs a real power cycle +
+BOOT-jumper flash-boot — physical access only, can't be done remotely.** The
+fix (generous post-reset settle + bounded retry on the first I2C batch in
+`imx335.c`, both strictly safe) is code-reviewed and written up in
+`docs/camera-bringup-debug-log.md` (§2026-06-13) but deliberately NOT applied
+yet — applying blind = "shipping the change as the fix." Apply + validate it on
+the next flash-boot session; only then revert the 4 DBGMARK driver markers.
 
 ### Prior state (2026-06-11 night) — still true
 

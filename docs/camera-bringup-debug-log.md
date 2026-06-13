@@ -17,6 +17,74 @@ than shipping the logging change as the fix.**
 
 ---
 
+## 2026-06-13 — the race is COLD-BOOT-only; logging speed was a confound
+
+Ran the exact experiment the 2026-06-11 status block asked for: built
+`apps/camera-app` with **deferred logging + a 32 KB buffer** (so the DBGMARK
+printks no longer block on the UART → original *fast* init timing, but nothing
+is dropped) — `overlays/fastlog-repro.conf` + `build/camera-app-fastlog`. Flashed
+it over SWD (warm dev-boot) and captured the boot from t=0.
+
+**Result: the camera came up perfectly even with fast/deferred timing.**
+`imx335_init` ran `ENTER → i2c-ready ok → all steps ok, calling init_controls`
+(no BAIL), the sensor vdev registered all **3 controls**, gain applied,
+`/dev/video0` streamed YUYV 640x480 @ 30 fps. The race did **NOT** reproduce.
+
+**So the 2026-06-11 working theory was wrong about the masking variable.** It is
+*not* "synchronous logging spaces init out." It's **sensor temperature**:
+
+- `scripts/swd-run.sh` does a `-hardRst` (NRST), which resets the **M33 core**
+  and reloads RAM — but the **board stays powered the whole time**. The IMX335's
+  power rails and INCK input clock have been up (often for the whole session)
+  by the time `imx335_init` runs. The sensor is *warm/ready*, so init's first
+  I2C writes always succeed regardless of how fast init runs.
+- The driver pulses the sensor's XCLR (`reset-gpios`, active-low) on **every**
+  init (configure-active → 500 ns → release → 600 µs T4), so XCLR state is the
+  same warm or cold. The cold variable is therefore **rail/INCK readiness**,
+  not reset.
+- The historical failure was on **flash-boot cold power-on** (BootROM → external
+  OSPI chainload → app), where the sensor had *just* been powered and INCK/PLL
+  had not settled when init hit it → an early I2C batch NAKs → init bails →
+  controls never register → `video_get_csi_link_freq` returns -ENOTSUP → capture
+  aborts. Slow logging happened to add enough delay to clear it, which is why
+  immediate-logging "fixed" it — a side effect, not the mechanism.
+
+**Consequence:** the race is **unreproducible over SWD dev-boot** — it needs a
+genuine cold power-cycle, i.e. the flash-boot path (`preflight-flash.sh
+build/<dir> --flash`) + BOOT-jumper moves + a physical power cycle. That can't be
+done remotely (needs hands on the board). The fix below is therefore *specified
+and code-reviewed but NOT yet applied/validated* — applying it blind would be
+"shipping the change as the fix" without proof. **Apply + validate it on the
+next session that has physical flash-boot access.**
+
+### The fix to apply + validate at the next flash-boot
+
+In `zephyr/drivers/video/imx335.c`, `imx335_init()`, harden the power-on so it
+tolerates a cold/just-powered sensor. Two strictly-safe changes (each a no-op on
+the warm path that already works, so they can't regress it):
+
+1. **Longer, always-run post-reset settle.** The 600 µs T4 after XCLR release is
+   marginal for a cold INCK/PLL. Give it a datasheet-generous settle (a few ms)
+   so register access waits for the sensor's internal boot. Runs every init →
+   validated by warm-boot still working.
+2. **Bounded retry on the first sensor access.** Wrap the first
+   `video_write_cci_multiregs(imx335_init_params, …)` in a retry loop: on
+   `ret < 0`, `k_msleep(2)` and retry up to ~10×; only `return ret` after the
+   budget is exhausted. This converges the instant the sensor is ready (zero
+   added delay warm), and turns a cold NAK from a fatal bail into a short wait.
+   It strictly dominates today's behavior — the new path executes *only* where
+   the current code already hard-fails.
+
+Validation gate (must pass before reverting the DBGMARK markers): flash-boot the
+build with **deferred logging** (cold timing, no logging-speed crutch), power
+cycle several times, and confirm every cold boot registers 3 controls + streams.
+Only then drop `CONFIG_LOG_MODE_IMMEDIATE=y`'s load-bearing status for the race
+and `git -C zephyr checkout` the 4 driver DBGMARK files
+(`imx335.c` keeps the fix), restoring a clean upstream-diff (the fix itself is
+upstream-worthy: a PR hardening IMX335 cold-boot init).
+
+---
+
 ## TL;DR — start here next session
 
 1. Power cycle → `scripts/preflight-flash.sh build/cam-trace-clean --flash`.
