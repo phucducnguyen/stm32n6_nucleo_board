@@ -21,6 +21,10 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/usb/class/usbd_uvc.h>
 
+#ifdef CONFIG_APP_FRAME_STATS
+#include "frame_stats.h"
+#endif
+
 LOG_MODULE_REGISTER(camera_app, LOG_LEVEL_INF);
 
 const static struct device *const uvc_dev = DEVICE_DT_GET(DT_NODELABEL(uvc));
@@ -262,6 +266,10 @@ int main(void)
 		VIDEO_FOURCC_TO_STR(fmt.pixelformat), fmt.width, fmt.height,
 		frmival.numerator, frmival.denominator);
 
+#ifdef CONFIG_APP_FRAME_STATS
+	frame_stats_init(fmt.width, fmt.height, fmt.pixelformat);
+#endif
+
 	fmt.type = VIDEO_BUF_TYPE_OUTPUT;
 	ret = video_set_compose_format(video_dev, &fmt);
 	if (ret != 0) {
@@ -327,9 +335,27 @@ int main(void)
 		}
 
 		/* Filled camera buffers -> UVC (to the USB host) */
+#ifdef CONFIG_APP_FRAME_STATS
+		/*
+		 * Faithful to video_transfer_buffer(video_dev, uvc_dev, OUTPUT,
+		 * INPUT, K_NO_WAIT), but peeks the buffer read-only between the
+		 * dequeue and the enqueue. -EAGAIN (no filled buffer yet) leaves
+		 * ret set and falls through to the shared error check, exactly as
+		 * the original would.
+		 */
+		struct video_buffer *pbuf = &(struct video_buffer){.type = VIDEO_BUF_TYPE_OUTPUT};
+
+		ret = video_dequeue(video_dev, &pbuf, K_NO_WAIT);
+		if (ret == 0) {
+			frame_stats_process(pbuf->buffer, pbuf->bytesused);
+			pbuf->type = VIDEO_BUF_TYPE_INPUT;
+			ret = video_enqueue(uvc_dev, pbuf);
+		}
+#else
 		ret = video_transfer_buffer(video_dev, uvc_dev,
 					    VIDEO_BUF_TYPE_OUTPUT, VIDEO_BUF_TYPE_INPUT,
 					    K_NO_WAIT);
+#endif
 		if (ret != 0 && ret != -EAGAIN) {
 			LOG_ERR("Failed to transfer from %s to %s",
 				video_dev->name, uvc_dev->name);

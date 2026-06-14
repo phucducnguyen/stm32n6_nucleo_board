@@ -29,6 +29,28 @@ scripts/cam-stream.sh                    # ustreamer on :8090
 Plain `nucleo_n657x0_q` (no `//sb`) for a signed flash-boot image, shipped via
 `scripts/preflight-flash.sh`.
 
+## Frame-stats hook (M3, optional)
+
+`src/frame_stats.{c,h}`, gated behind `CONFIG_APP_FRAME_STATS` (default **off** —
+off builds are byte-for-byte the verified webcam). When on, the frame loop peeks
+each camera buffer read-only on its way to the host and logs ~1 Hz: luma
+mean/min/max, an 8×8-block inter-frame motion score, fps, and per-frame
+processing time.
+
+```sh
+west build -p -b 'nucleo_n657x0_q//sb' apps/camera-app -d build/camera-app-stats \
+  -- -DCONFIG_APP_FRAME_STATS=y
+scripts/swd-run.sh build/camera-app-stats   # then stream to drive the loop
+```
+
+**Measured on hardware (2026-06-14):** a full per-pixel pass (stride 1) costs
+~336 ms/frame and drops UVC 20→2 fps — the frame buffer is non-cacheable
+`AXISRAM1` that the CSI DMA is actively writing, so each byte read is ~1 µs
+under DMA contention and the cost scales linearly with bytes touched.
+`CONFIG_APP_FRAME_STATS_STRIDE` (default 8) samples 64× fewer pixels and keeps
+the stream at 20 fps (~4.8 ms/frame). Lesson: don't brute-scan a DMA frame
+buffer in uncached memory — sample it. Set stride 1 only to reproduce the cost.
+
 ## Known constraints
 
 - `CONFIG_LOG_MODE_IMMEDIATE=y` in `prj.conf` is **load-bearing** until the

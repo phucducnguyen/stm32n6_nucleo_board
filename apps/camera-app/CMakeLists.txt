@@ -16,4 +16,5 @@ find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
 project(camera_app LANGUAGES C)
 
 target_sources(app PRIVATE src/main.c src/app_usbd.c)
+target_sources_ifdef(CONFIG_APP_FRAME_STATS app PRIVATE src/frame_stats.c)
 target_include_directories(app PRIVATE src)

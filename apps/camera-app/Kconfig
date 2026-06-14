@@ -54,6 +54,29 @@ config APP_CAMERA_ANALOGUE_GAIN_MDB
 	  usable indoor default. The sensor step is 300 mdB. Set 0 to leave
 	  the sensor at its power-up default.
 
+config APP_FRAME_STATS
+	bool "Per-frame luma + motion-diff stats hook (M3)"
+	default n
+	help
+	  When enabled, the frame loop peeks each camera buffer in transit to
+	  the UVC host and logs periodic luma (mean/min/max), inter-frame
+	  motion, fps and per-frame processing time. Read-only on pixel data;
+	  when disabled the firmware is byte-for-byte the verified webcam.
+
+config APP_FRAME_STATS_STRIDE
+	int "Frame-stats sampling stride (pixels)"
+	depends on APP_FRAME_STATS
+	default 8
+	range 1 64
+	help
+	  Sample one pixel every N in both x and y when computing the stats.
+	  The camera buffer lives in non-cacheable AXISRAM that the CSI DMA is
+	  actively writing, so a full per-pixel pass (stride 1) contends with
+	  that DMA and measured ~336 ms/frame on hardware — collapsing the UVC
+	  stream from ~20 to ~2 fps. Stride 8 reads 64x fewer bytes and keeps
+	  the stream fast; the coarse luma/motion signal is unaffected at desk
+	  scale. Set 1 only to reproduce the full-pass cost measurement.
+
 endmenu
 
 source "Kconfig.zephyr"
