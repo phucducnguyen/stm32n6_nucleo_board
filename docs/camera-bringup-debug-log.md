@@ -83,6 +83,37 @@ and `git -C zephyr checkout` the 4 driver DBGMARK files
 (`imx335.c` keeps the fix), restoring a clean upstream-diff (the fix itself is
 upstream-worthy: a PR hardening IMX335 cold-boot init).
 
+### 2026-06-14 — fix applied + VALIDATED on cold flash-boot
+
+Both changes applied to `zephyr/drivers/video/imx335.c`: T4 settle `K_USEC(600)
+→ K_MSEC(5)` (always-run) and a bounded retry (`10 × k_msleep(2)`) around the
+first `imx335_init_params` I2C batch. Built the flash-boot image (plain
+`nucleo_n657x0_q`, signed) with `overlays/fastlog-repro.conf` — **deferred
+logging, fast cold timing, no sync-logging crutch** — and `west flash`-ed it to
+external flash over ST-Link (note: needs a `-hardRst` to idle the core first, or
+the external-flash erase fails against the running RAM app).
+
+**Result: 3/3 cold power-cycles streamed clean** (cables out→in, BOOT0+BOOT1 →
+pos 1). Each cold boot re-enumerated the UVC device (`2fe3:0011`, distinct USB
+device numbers 32/34/36) and served a live frame via ustreamer `:8090/snapshot`
+with a distinct pixel hash — i.e. the full sensor→controls→link-freq(990 MHz)→
+DCMIPP→UVC path came up cold every time. This is also the **first confirmed
+persistent cold flash-boot** of the camera (was an unchecked M1 TODO). The race
+manifests as init *failing* (no UVC device), so a streaming cold boot is proof
+the fix carries it. Serial boot-trace was NOT capturable across the cycle (the
+ST-Link VCP re-enumerates slower than the N6 reaches `imx335_init`, so those
+lines are gone before the host can attach) — functional UVC enumeration is the
+reliable signal instead. Caveat: the race was only ever *characterized*, never
+cleanly reproduced on flash-boot, so a controlled A/B vs the unfixed driver
+(deferred) would be the fully rigorous follow-up; not run.
+
+Post-validation: DBGMARK markers reverted (3 files via `git -C zephyr checkout`,
+`imx335.c` hand-stripped of its 9 markers, fix kept) → clean upstream-worthy
+`imx335.c` diff. `CONFIG_LOG_MODE_IMMEDIATE=y` is NO LONGER needed to mask the
+race, but stays in `camera-app/prj.conf` for its *other* reason (deferred + small
+buffer + `LOG_PRINTK` drops boot output — trap #1); switching prod to a big
+deferred buffer is a separate cleanup.
+
 ---
 
 ## TL;DR — start here next session

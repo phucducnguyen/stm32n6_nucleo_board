@@ -1,6 +1,21 @@
 # HANDOVER
 
-## CURRENT (2026-06-13)
+## CURRENT (2026-06-14)
+
+**2026-06-14 — imx335 cold-boot race FIXED + validated, M3 processing hook
+landed.** Two things closed this session:
+- **imx335 boot-timing race: FIXED and VALIDATED on cold flash-boot.** Applied
+  the settle (`K_USEC(600)→K_MSEC(5)`) + bounded I2C retry to `imx335.c`, built a
+  deferred-logging (fast cold timing) flash-boot image, and got **3/3 clean cold
+  power-cycles** (UVC re-enumerated + live frame each time). First confirmed
+  persistent cold flash-boot of the camera. DBGMARK markers reverted → clean
+  upstream-worthy `imx335.c` diff (the ONLY remaining pinned-tree edit). Full
+  writeup: `docs/camera-bringup-debug-log.md` §2026-06-14.
+- **M3 "processing on target" hook** in `apps/camera-app` (`src/frame_stats.{c,h}`,
+  gated `CONFIG_APP_FRAME_STATS`, default off). Hardware-verified via swd-run:
+  per-frame luma + 8×8 motion + timing. Key finding — a full per-pixel scan of the
+  non-cacheable DMA frame buffer costs ~336 ms/frame (20→2 fps); a sampling stride
+  (default 8) restores 20 fps. Committed.
 
 **State: `apps/camera-app` is now our verified primary firmware — HARDWARE
 VERIFY PASSED 2026-06-13. M1 done, the app fork is done and proven on silicon.**
@@ -29,20 +44,18 @@ edits remain (gated on the imx335 timing-race fix, see NEXT).
 135 KB in the 511 KB window, links at 0x34180400, 1.25 MB pool in
 runtime-only AXISRAM1.
 
-**NEXT (M2 — imx335 boot-timing race): CHARACTERIZED 2026-06-13, fix specified,
-validation gated on physical flash-boot.** Chased it with the board on: built a
-deferred-logging / fast-timing repro (`overlays/fastlog-repro.conf`,
-`build/camera-app-fastlog`) and it streamed fine — the race did NOT reproduce
-over SWD dev-boot. Reason: dev-boot only resets the M33 core; the board stays
-powered, so the IMX335 is warm (rails + INCK already settled) when init runs.
-The race is **cold-power-on only** (flash-boot), so logging speed was a confound,
-not the cause. **Reproducing/validating the fix needs a real power cycle +
-BOOT-jumper flash-boot — physical access only, can't be done remotely.** The
-fix (generous post-reset settle + bounded retry on the first I2C batch in
-`imx335.c`, both strictly safe) is code-reviewed and written up in
-`docs/camera-bringup-debug-log.md` (§2026-06-13) but deliberately NOT applied
-yet — applying blind = "shipping the change as the fix." Apply + validate it on
-the next flash-boot session; only then revert the 4 DBGMARK driver markers.
+**M2 — imx335 boot-timing race: FIXED + VALIDATED 2026-06-14.** ✅ The fix
+(post-reset settle `K_USEC(600)→K_MSEC(5)` + bounded retry on the first I2C batch
+in `imx335.c`, both strictly safe / no-op on the warm path) is applied and proven
+on **3/3 cold flash-boots** with a deferred-logging fast-timing image (no
+sync-logging crutch). DBGMARK markers reverted — `imx335.c` (the fix) is the only
+remaining pinned-tree edit, a clean upstream-worthy diff. Full writeup:
+`docs/camera-bringup-debug-log.md` §2026-06-14. Background: the race is
+**cold-power-on only** (over warm SWD dev-boot the IMX335 rails/INCK are already
+settled, so it never reproduced there); validation therefore required a real
+flash-boot cold power-cycle. Open follow-ups (optional): a controlled A/B vs the
+unfixed driver for full rigor; an upstream PR; and switching prod logging off the
+sync crutch (big deferred buffer) now that the race no longer needs it.
 
 ### Prior state (2026-06-11 night) — still true
 
@@ -78,11 +91,14 @@ The whole "silent boot" saga resolved as three stacked causes (full story:
 `build/cam-trace-clean` (capture sample + pixel-stats, 30 fps verified).
 UVC needs the 1.25 MB pool configs to advertise 640x480 (else only 48x31).
 
-**Temp edits in the pinned `zephyr/` tree (6 files, do NOT commit there):**
-printk markers (video_common/video_ctrls/imx335/dcmipp/capture-main) + UVC
-main.c (controls include + 30 dB ANALOGUE_GAIN default — superseded by
-camera-app's Kconfig; revert the two sample files after camera-app passes on
-hardware). Revert command + per-file list: `docs/camera-bringup-debug-log.md`.
+**Pinned `zephyr/` tree edits (do NOT commit there): now just ONE.** As of
+2026-06-14 the only local edit is `drivers/video/imx335.c` = the validated
+cold-boot fix (settle + retry), a clean upstream-worthy diff. The DBGMARK printk
+markers (video_common/video_ctrls/imx335/dcmipp) were reverted post-validation,
+and the two UVC sample `main.c` files were reverted after the camera-app verify
+(2026-06-13). The fix is also saved as `patches/imx335-cold-boot-init.patch` so
+it survives a `west update`/tree reset; re-apply with
+`git -C zephyr apply ../patches/imx335-cold-boot-init.patch`.
 
 **NEXT SESSION candidates (after the camera-app hardware verify above):**
 (1) fix the timing race properly (then drop the sync-logging requirement +

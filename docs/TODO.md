@@ -15,22 +15,23 @@ Each milestone is independently demo-able; don't start M(n+1) before M(n) passes
 - [x] "silent boot" SOLVED — was dead USB cable + log-drop trap (`CONFIG_LOG_PRINTK` deferred buffer) + imx335 boot-timing race; see `docs/camera-bringup-debug-log.md` ✅ 2026-06-11
 - [x] IMX335 probed @ csi_i2c 0x1a, frames dequeuing at stable 30 fps, real pixel content verified (lens-cover test) ✅ 2026-06-11
 - [x] SWD debug access regained (dev boot); new flash loop = `scripts/swd-run.sh` — no power cycles, no DFU ✅ 2026-06-11
-- [ ] **fix the boot-timing race properly** (sensor-init delay/retry; today masked by `overlays/debug-logging.conf` synchronous logging) — then revert the zephyr temp edits (list in debug log) and consider upstreaming
-- [ ] flash-boot the working config (plain board target) for a persistent standalone demo
-- [ ] clean up `build/` experiment dirs
+- [x] **fix the boot-timing race properly** — settle (`K_USEC(600)→K_MSEC(5)`) + bounded I2C retry in `imx335.c`; VALIDATED 3/3 cold flash-boots 2026-06-14; DBGMARK markers reverted; saved as `patches/imx335-cold-boot-init.patch` (upstream-worthy). See debug-log §2026-06-14 ✅
+- [x] flash-boot the working config (plain board target) for a persistent standalone demo — done 2026-06-14 (signed image in external flash at 0x70000000, cold-boots and streams standalone) ✅
+- [ ] clean up `build/` experiment dirs (now incl. `camera-app-stats`, `camera-app-coldtest`)
+- [ ] (optional) switch prod logging off the sync crutch — race no longer needs `CONFIG_LOG_MODE_IMMEDIATE`; use a big deferred buffer instead (avoids the trap-#1 log-drop). Also consider an upstream IMX335 cold-boot PR
 
 ## M2 — own application (`apps/camera-app`) — frame export landed early via UVC
 - [x] frame export path for eyeballing images on atlas: USB webcam (Zephyr UVC sample → `build/uvc`, VGA needs the 1.25 MB pool configs) + ustreamer browser stream (`scripts/cam-stream.sh`, :8090) + on-demand AI description (`scripts/cam-describe.sh`) ✅ 2026-06-11
 - [x] `apps/camera-app` created — UVC sample forked + owned (shield/overlay/configs self-contained, encoder dead code stripped, `app_usbd.c` replaces sample helpers); builds clean, 135 KB in the 511 KB window ✅ 2026-06-12
-- [ ] **flash `build/camera-app` via swd-run.sh + verify webcam/stream on hardware** (board was unplugged 2026-06-12) — then revert the two sample-file temp edits in `zephyr/`
+- [x] **flash `build/camera-app` + verify webcam/stream on hardware** — HW verify PASSED 2026-06-13; the two sample-file temp edits in `zephyr/` reverted ✅
 - [ ] extend the app: Zephyr shell cmds (snap/stats), capture-N-frames mode
 - [ ] white balance for the green cast (DCMIPP pipeline config) + manual lens focus
 - [x] make the 30 dB gain default a proper Kconfig/app setting — `CONFIG_APP_CAMERA_ANALOGUE_GAIN_MDB` in camera-app ✅ 2026-06-12
 - [ ] decide+document frame geometry: DCMIPP crop/downscale config vs RAM budget (full 5 MP never fits internal SRAM)
 
 ## M3 — processing on target (firmware-engineer muscle)
-- [ ] per-frame processing hook (start: luma histogram / simple motion diff between buffers)
-- [ ] measure: fps, CPU load, memory headroom; try Helium/MVE (CMSIS-DSP is already a west module — just `west update cmsis-dsp`)
+- [x] per-frame processing hook — `apps/camera-app/src/frame_stats.{c,h}` (gated `CONFIG_APP_FRAME_STATS`, default off): luma mean/min/max + 8×8-block motion + per-frame timing, ~1 Hz log. HW-verified 2026-06-14 (commit 4655ed2) ✅
+- [~] measure — fps + per-frame proc time measured on hardware: a full per-pixel scan costs ~336 ms/frame and drops UVC 20→2 fps (cost = ~1 µs/byte reading the non-cacheable AXISRAM DMA buffer under CSI-DMA contention; `CONFIG_APP_FRAME_STATS_STRIDE` default 8 → back to 20 fps). Still TODO: CPU-load %, Helium/MVE + CMSIS-DSP (`west update cmsis-dsp`)
 
 ## M4 — edge AI (separate track, feeds back in)
 - [ ] STM32Cube.AI / X-CUBE-N6 evaluation for Neural-ART NPU (NOT Zephyr — keep in its own dir/repo)

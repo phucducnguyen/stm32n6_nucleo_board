@@ -1,0 +1,58 @@
+diff --git a/drivers/video/imx335.c b/drivers/video/imx335.c
+index cead6b71..138212a7 100644
+--- a/drivers/video/imx335.c
++++ b/drivers/video/imx335.c
+@@ -682,6 +682,7 @@ static int imx335_init(const struct device *dev)
+ 	struct imx335_data *drv_data = dev->data;
+ 	int ret;
+ 
++
+ 	if (!device_is_ready(cfg->i2c.bus)) {
+ 		LOG_ERR("Bus device is not ready");
+ 		return -ENODEV;
+@@ -705,16 +706,38 @@ static int imx335_init(const struct device *dev)
+ 
+ 		gpio_pin_set_dt(&cfg->reset_gpio, 0);
+ 
+-		k_sleep(K_USEC(600)); /* T4 */
++		/*
++		 * T4: datasheet min is ~600 us, but on a COLD power-on (flash
++		 * boot) the sensor rails + INCK/PLL have only just come up when
++		 * init runs. Give a datasheet-generous settle so the first I2C
++		 * access waits for the sensor's internal boot. No-op on the warm
++		 * SWD dev-boot path that already works. (was K_USEC(600))
++		 */
++		k_sleep(K_MSEC(5)); /* T4 (cold-boot hardened) */
+ 	}
+ #endif
+ 
+-	/* Initialize register values */
+-	ret = video_write_cci_multiregs(&cfg->i2c, imx335_init_params,
+-					ARRAY_SIZE(imx335_init_params));
+-	if (ret < 0) {
+-		LOG_ERR("Unable to initialize the sensor");
+-		return ret;
++
++	/*
++	 * First sensor access. On a COLD power-on the sensor may NAK the first
++	 * I2C batch if INCK/PLL has not fully settled. Retry a bounded number
++	 * of times: this converges the instant the sensor is ready (zero added
++	 * delay on the warm path) and turns a cold NAK from a fatal bail into a
++	 * short wait. Only reached where the old code already hard-failed, so it
++	 * cannot regress the working warm path.
++	 */
++	for (int attempt = 0; ; attempt++) {
++		/* Initialize register values */
++		ret = video_write_cci_multiregs(&cfg->i2c, imx335_init_params,
++						ARRAY_SIZE(imx335_init_params));
++		if (ret == 0) {
++			break;
++		}
++		if (attempt >= 10) {
++			LOG_ERR("Unable to initialize the sensor");
++			return ret;
++		}
++		k_msleep(2);
+ 	}
+ 
+ 	/* Apply the fixed value registers */
