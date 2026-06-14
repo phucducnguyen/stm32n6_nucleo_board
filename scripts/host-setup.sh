@@ -6,15 +6,20 @@ set -euo pipefail
 
 [ "$(id -u)" -eq 0 ] || { echo "run with sudo"; exit 1; }
 
-echo "== 1/3 serial access: add ndp to dialout =="
-usermod -aG dialout ndp
+# the real (non-root) user who invoked sudo — scripts stay host-agnostic
+INVOKER="${SUDO_USER:-$(logname 2>/dev/null || true)}"
+[ -n "$INVOKER" ] && [ "$INVOKER" != root ] || { echo "run via 'sudo' from your normal user, not as root directly"; exit 1; }
+INVOKER_HOME=$(getent passwd "$INVOKER" | cut -d: -f6)
+
+echo "== 1/3 serial access: add $INVOKER to dialout =="
+usermod -aG dialout "$INVOKER"
 echo "   (takes effect on next login; 'sg dialout -c <cmd>' works immediately)"
 
 echo "== 2/3 host packages: gperf dtc ccache picocom =="
 apt-get install -y -qq gperf device-tree-compiler ccache picocom
 
 echo "== 3/3 udev rules: ST-Link accessible without root (ST official rules) =="
-RULES_SRC=/home/ndp/STMicroelectronics/STM32CubeProgrammer/Drivers/rules
+RULES_SRC="$INVOKER_HOME/STMicroelectronics/STM32CubeProgrammer/Drivers/rules"
 if [ -d "$RULES_SRC" ]; then
   cp "$RULES_SRC"/49-stlink*.rules "$RULES_SRC"/50-usb-conf.rules /etc/udev/rules.d/
 else

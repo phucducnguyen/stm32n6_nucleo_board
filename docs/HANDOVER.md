@@ -49,7 +49,7 @@ the next flash-boot session; only then revert the 4 DBGMARK driver markers.
 **CAMERA FULLY WORKING, end to end.** The board runs the Zephyr UVC
 sample (`build/uvc` — known-good fallback binary, do not delete) and is a
 standard USB webcam on atlas (`/dev/video0`); live browser stream via
-ustreamer at `http://10.0.0.150:8090/stream` (LAN, ufw rule added; also via
+ustreamer at `http://<host-lan-ip>:8090/stream` (LAN, ufw rule added; also via
 Tailscale); on-demand AI scene description through hotchocolate's qwen3-vl.
 M1 "first light" is DONE and then some.
 
