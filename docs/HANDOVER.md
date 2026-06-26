@@ -24,6 +24,13 @@
 > **person-detection / counting model on the NPU**, not frame streaming. Don't mistake
 > "stream the camera to a browser" for the product. Validation gate still holds: a real
 > space manager must care about the weekly usage report before any custom PCB.
+>
+> **Concrete, corrected Step-1 bench plan → `docs/TODO.md` M4:** flash ST's prebuilt
+> **NUCLEO** UVC people-detection hex (expect **TinyYOLOv2** on the NUCLEO flavor; YoloX
+> is the **DK** flavor), external-flash boot, then verify on the stream whether **track
+> IDs** are present + stable + programmatically accessible (that decides count-only v0 vs
+> dwell/queue v0.2). `st_yolo_x_nano` (COCO-Person, SLA0044) is the later license-clean
+> swap; reject AGPL YOLOv8/v11. Measure real NUCLEO latency at the bench.
 
 **2026-06-14 (session 2) — pose spike RAN (NPU works), then pivoted to Ethernet.**
 NEXT SESSION STARTS HERE.
