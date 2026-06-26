@@ -8,6 +8,10 @@ This file = how to build/flash and what not to break.
 
 Zephyr RTOS camera firmware for the **NUCLEO-N657X0-Q** (STM32N657X0, Cortex-M55 @ 800 MHz + Neural-ART NPU) with the **B-CAMS-IMX** camera module (Sony IMX335, 5 MP, MIPI CSI-2). Long-term arc: camera capture → frame processing → edge-AI vision. NOT a nebula service — lives in `~/projects/`, nothing here touches `/srv/nebula`.
 
+## Product direction (Edge Kit wedge, chosen 2026-06-25)
+
+This board is the on-device vision node for a **vision-grade local occupancy sensor**: it watches a space (room / queue / booth / counter), runs inference **on-device**, and emits only **anonymous usage events** (people count, seat/desk occupancy, queue length, dwell, zone engagement) to atlas. Flow: camera → on-device count → small event out. **INVARIANT — do not break: the camera image NEVER leaves the device.** Local-only is both the privacy story and the wedge vs cloud cameras; "stream the camera frame out to a browser" contradicts it (that's debug plumbing, not product). Positioning is *richer spatial detail than thermal/blob + local-only* for granularity-hungry, less-camera-shy spaces (retail/clinic/gym/booth/queue) — NOT "more private than thermal". Full thesis: Edge Kit planning vault `PRODUCT-DIRECTION.md`.
+
 ## Workspace layout (west T1, Zephyr is the manifest repo)
 
 | Path | What | Git |

@@ -2,8 +2,79 @@
 
 ## CURRENT (2026-06-14)
 
-**2026-06-14 — imx335 cold-boot race FIXED + validated, M3 processing hook
-landed.** Two things closed this session:
+> **▶ PRODUCT NORTH-STAR (chosen 2026-06-25).** This firmware now has a sellable target:
+> a **vision-grade local occupancy sensor** — the N6 watches a space (room / queue / booth
+> / counter), runs inference **on-device**, and emits **anonymous usage events** (people
+> count, seat/desk occupancy, queue length, dwell, zone engagement). **The camera image
+> never leaves the device** — that local-only promise is both the privacy story and the
+> wedge vs cloud cameras. (We deliberately do NOT claim "more private than thermal":
+> camera-free thermal sensors own a hardware-level privacy guarantee; our wedge is *richer
+> spatial detail than thermal/blob, with local-only processing*, aimed at granularity-
+> hungry, less-camera-shy spaces — retail / clinic / gym / booth / queue, not corporate
+> offices.) Full thesis lives in the Edge Kit planning vault (`PRODUCT-DIRECTION.md`).
+>
+> **What this means for the build priority — read before picking the next step:**
+> The product's data flow is **camera → on-device inference (count) → emit a small event
+> to atlas**, image staying on the board. The **pose spike already proved the on-device
+> NPU path works (14–15 ms)**, so that capability is closer to the product than the
+> Ethernet plan's **N3 "snapshot-over-HTTP"**, which *sends the frame out to a browser* and
+> therefore **contradicts the "images never leave" promise**. Keep the Ethernet/HTTP work
+> as useful **plumbing/learning**, but the *product* path is **N4-style** (on-board process
+> → emit anonymous event), and the next product-aligned capability to build is a
+> **person-detection / counting model on the NPU**, not frame streaming. Don't mistake
+> "stream the camera to a browser" for the product. Validation gate still holds: a real
+> space manager must care about the weekly usage report before any custom PCB.
+
+**2026-06-14 (session 2) — pose spike RAN (NPU works), then pivoted to Ethernet.**
+NEXT SESSION STARTS HERE.
+
+- **Pose de-risk (Phase 3): substantively PASSED, owes one clean still frame.**
+  Flashed ST's `STM32N6-GettingStarted-PoseEstimation` prebuilt UVC hex and the
+  full **camera → Neural-ART NPU → keypoints → UVC** chain runs: device enumerates
+  as `0483:5780 STMicroelectronics STM32 uvc` (`/dev/video0`, YUYV 320×240), overlay
+  reads **"Inference: 14–15 ms"** (~66 fps MoveNet on the NPU), and once a person was
+  in frame upright-ish MoveNet **drew the skeleton** (overlay-colored pixels went
+  0 → 5940). Not yet captured: one sharp, still, upright frame to eyeball
+  nose/shoulder tracking + the slouch signal — frames were motion-blurred and the
+  **camera is mounted rotated ~90°** (person appears sideways; MoveNet wants upright).
+  Resume by re-flashing the pose hex (see below) and grabbing a clean frame.
+  - **ST repo:** cloned at `~/projects/st-pose` (sibling, **NOT** in our git tree;
+    334 MB shallow). Prebuilt UVC hex =
+    `Binary/NUCLEO-N657X0-Q/USB-UVC-Display/NUCLEO-N657X0-Q_GettingStarted_PoseEstimation-uvc.hex`
+    (single pre-signed assembly of FSBL+app+weights, 2.99 MB @ `0x70000000`).
+  - **FLASH GOTCHA (new, important):** ST's documented `mode=HOTPLUG` flash command
+    **fails** ("No STM32 target found / Unable to get core ID") when the board is
+    mid-run in flash-boot — HOTPLUG connects *before* the reset and hits the running
+    app's closed debug port. **Use connect-under-reset instead:**
+    `STM32_Programmer_CLI -c port=swd mode=UR -el "$NUEL" -hardRst -w <uvc.hex>`
+    where `NUEL=~/STMicroelectronics/.../ExternalLoader/MX25UM51245G_STM32N6570-NUCLEO.stldr`.
+    Board must be in **dev-boot** to flash; switch to **flash-boot** + power-cycle to run;
+    UVC data is on **CN8** (USB-OTG, next to RJ45). `docs/pose-bringup-checklist.md`
+    updated with this.
+  - Board **currently holds ST's pose app in external flash** (overwrote our camera
+    image — fine, `swd-run.sh` restores our `camera-app` anytime).
+
+- **Ethernet: DECIDED next build = "N6 networked camera node" + feasibility CONFIRMED.**
+  Goal: the N6 becomes a real LAN node you hit from a browser to see its camera
+  ("pictures from the camera, from outside") — fuses the camera + M3 processing + net.
+  - **Zephyr v4.4.1 enables Ethernet out-of-the-box on this board** — `&mac` (RMII,
+    PF7/10/11/12/13/14/15), `&mdio`, generic `eth_phy@0`, MAC from OTP (BSEC), driver
+    `eth_stm32_hal_v2.c`, `NET_L2_ETHERNET` default — all in
+    `boards/st/nucleo_n657x0_q/nucleo_n657x0_q_common.dtsi`. **No overlay needed.**
+  - **Trial build `zephyr/samples/net/dhcpv4_client` → clean, 231 KB / 44 % of the
+    511 KB window** (`build/net-dhcp`). Plenty of headroom.
+  - **Plan (each step demoable):** N1 first-packet (DHCP lease + ping atlas ↔ N6) →
+    N2 hello-over-HTTP (browser → N6 IP → text) → **N3 snapshot-over-HTTP ⭐** (browser
+    → camera still; *open feasibility* — JPEG/frame size + camera+net coexistence in
+    511 KB, de-risk with a spike before promising) → N4 on-board process + emit event
+    to atlas.
+  - **Resume N1:** board → **dev-boot**, Ethernet RJ45 → LAN, then
+    `scripts/swd-run.sh build/net-dhcp`, watch `ttyACM0` for the DHCP lease, ping atlas.
+
+---
+
+**2026-06-14 (session 1) — imx335 cold-boot race FIXED + validated, M3 processing
+hook landed.** Two things closed this session:
 - **imx335 boot-timing race: FIXED and VALIDATED on cold flash-boot.** Applied
   the settle (`K_USEC(600)→K_MSEC(5)`) + bounded I2C retry to `imx335.c`, built a
   deferred-logging (fast cold timing) flash-boot image, and got **3/3 clean cold

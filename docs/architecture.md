@@ -72,6 +72,20 @@ devicetree wiring (this is where board/camera meet):
 
 Build composition = board dts + shield overlay + our `EXTRA_DTC_OVERLAY_FILE` + Kconfig fragments on the command line. No Zephyr-tree patches; everything we own sits outside `zephyr/`.
 
+## Product role (Edge Kit wedge)
+
+The chosen Edge Kit product (2026-06-25) is a **vision-grade local occupancy sensor**, and this board is its on-device vision node:
+
+```
+camera ─► ON-DEVICE inference (person-detect / count on Neural-ART NPU)
+            └─► emit a SMALL ANONYMOUS event ──► atlas server
+                (people count, occupancy, queue length, dwell, zone engagement)
+```
+
+- **Core invariant: the camera image NEVER leaves the device — only anonymous metadata is emitted.** This is both the privacy guarantee and the wedge vs. cloud cameras, so the architecture favors the inference-then-emit-event path.
+- The USB-UVC frame export above is **plumbing / learning**, not the product path: streaming raw frames off the board would violate the images-never-leave invariant. It de-risks the capture pipeline and feeds on-device-inference work; it isn't what ships.
+- Full product thesis lives in the Edge Kit planning vault (`PRODUCT-DIRECTION.md`).
+
 ## Toolchain / host side
 
 atlas (this machine) is the dev host. Self-contained: `.venv` (west, cmake, ninja, py deps) + `~/zephyr-sdk-1.0.1` (arm-zephyr-eabi gcc 14.3). Flash/debug runner = STM32CubeProgrammer (user-installed, license-gated) over ST-Link. No system packages were installed; no sudo anywhere in the build path.
