@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "occbridge"
+version = "0.1.0"
+description = "Host-side occupancy bridge for an STM32N6 edge vision sensor."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["stm32n6", "occupancy", "edge", "vision", "serial"]
+# No required third-party dependencies — stdlib only.
+dependencies = []
+
+[project.optional-dependencies]
+# Enables the native serial backend; without it SerialSource falls back to
+# reading the device as a binary file.
+serial = ["pyserial>=3.5"]
+
+[project.scripts]
+occbridge = "occbridge.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["occbridge*"]
+
+[tool.setuptools.package-data]
+# none — sample logs live under tests/ and are not shipped in the wheel.

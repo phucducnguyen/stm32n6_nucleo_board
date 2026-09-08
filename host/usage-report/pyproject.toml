@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "usagereport"
+version = "0.1.0"
+description = "Turn an occupancy event log into a plain-language weekly usage report."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+keywords = ["occupancy", "edge", "report", "analytics", "stdlib"]
+# No third-party dependencies — stdlib only.
+dependencies = []
+
+[project.scripts]
+usagereport = "usagereport.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["usagereport*"]
+
+[tool.setuptools.package-data]
+# none — demo-data tools and tests are not shipped in the wheel.

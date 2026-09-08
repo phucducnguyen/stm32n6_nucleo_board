@@ -1,0 +1,346 @@
+diff --git a/Inc/det_emit.h b/Inc/det_emit.h
+new file mode 100644
+index 0000000..ffde74a
+--- /dev/null
++++ b/Inc/det_emit.h
+@@ -0,0 +1,90 @@
++/**
++ ******************************************************************************
++ * @file    det_emit.h
++ * @brief   Per-frame person-detection / occupancy emitter over USART1.
++ *
++ * ADD-ON module (not part of the original ST sample). Emits one line per
++ * processed inference frame on the existing console UART (USART1 / ST-Link
++ * VCP, 115200 8N1) so a host can read structured occupancy data. It reuses
++ * the project's existing printf redirection (PUTCHAR_PROTOTYPE -> USART1);
++ * no new UART init is required.
++ *
++ * Wire protocol (integers only, no %f):
++ *   DET <seq> <ts_ms> <count> [<id>:<cx>:<cy>:<w>:<h>:<conf> ...]
++ *     seq   : uint32 frame counter (increments once per emitted line)
++ *     ts_ms : HAL_GetTick() value
++ *     count : number of detections emitted this frame (== tuple count)
++ *     cx,cy,w,h : box center/size in PERMILLE (0..1000)
++ *     conf      : confidence in PERCENT (0..100)
++ * A header-only line ("DET <seq> <ts> 0") is emitted when count == 0.
++ ******************************************************************************
++ */
++
++#ifndef DET_EMIT_H
++#define DET_EMIT_H
++
++#include <stdint.h>
++#include "od_pp_output_if.h"   /* od_pp_outBuffer_t */
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++/* APP_DET_EMIT: master compile-time switch for the detection emitter.
++ * Default ON. To disable: set to 0 (or comment out the define) and rebuild.
++ * Both the emit body (det_emit.c) and the single call site (app.c) then
++ * compile out / to a no-op, so the feature is fully removable from one place. */
++#ifndef APP_DET_EMIT
++#define APP_DET_EMIT 1
++#endif
++
++/*
++ * tbox_info: tracked-box payload shared between app.c and det_emit.c.
++ *
++ * Type-sharing approach: this typedef was MOVED here from app.c, where it was
++ * a file-local typedef guarded by TRACKER_MODULE. It is now declared here
++ * (unconditionally) so DetEmit_Frame() can take it by const reference and so
++ * the module compiles in both tracker and no-tracker builds. The layout is
++ * byte-for-byte identical to the original definition; app.c now relies on this
++ * declaration via #include "det_emit.h".
++ *
++ * NOTE: a tracked box carries NO confidence (neither tbox_info nor the
++ * tracker's trk_tbox_t has a conf field), so in tracking mode the emitted
++ * conf is reported as 0. Real confidence is only available in no-tracking
++ * mode, where it comes from od_pp_outBuffer_t.conf.
++ */
++typedef struct {
++  double cx;
++  double cy;
++  double w;
++  double h;
++  uint32_t id;
++} tbox_info;
++
++/**
++ * @brief Emit one wire-protocol line for the current inference frame.
++ *
++ * @param ts_ms       timestamp (HAL_GetTick()) for this frame
++ * @param count       caller's detection count (advisory; the function derives
++ *                    the actual emitted count from the active source so the
++ *                    header count and tuple count always agree)
++ * @param tboxes      tracked boxes (used when tracking_on); may be NULL
++ * @param ntb         number of valid entries in @p tboxes
++ * @param dets        raw post-process detections (used when !tracking_on)
++ * @param ndet        number of valid entries in @p dets
++ * @param tracking_on non-zero selects @p tboxes (ids + conf=0); zero selects
++ *                    @p dets (id=0 + real conf)
++ *
++ * Integer-only formatting; the line length is bounded (tuples capped). Safe to
++ * call once per frame from the post-process thread.
++ */
++void DetEmit_Frame(uint32_t ts_ms, uint32_t count,
++                   const tbox_info *tboxes, uint32_t ntb,
++                   const od_pp_outBuffer_t *dets, uint32_t ndet,
++                   int tracking_on);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif /* DET_EMIT_H */
+diff --git a/Makefile b/Makefile
+index 2317d98..a5b3697 100644
+--- a/Makefile
++++ b/Makefile
+@@ -58,6 +58,7 @@ C_SOURCES += Model/$(BOARD)/network.c
+ C_SOURCES += Model/$(BOARD)/stai_network.c
+ C_SOURCES += Src/app_cam.c
+ C_SOURCES += Src/freertos_bsp.c
++C_SOURCES += Src/det_emit.c
+ 
+ # ASM sources
+ ASM_SOURCES =
+@@ -122,8 +123,8 @@ C_DEFS += -DTX_MAX_PARALLEL_NETWORKS=1
+ C_INCLUDES += -IInc -IModel/$(BOARD)
+ 
+ 
+-ASFLAGS = $(MCU) $(AS_DEFS) $(AS_INCLUDES) $(OPT) -Wall -fstack-usage -fdata-sections -ffunction-sections -fcyclomatic-complexity
+-CFLAGS = $(MCU) $(C_DEFS) $(C_INCLUDES) $(OPT) -Wall -fstack-usage -fdata-sections -ffunction-sections -fcyclomatic-complexity
++ASFLAGS = $(MCU) $(AS_DEFS) $(AS_INCLUDES) $(OPT) -Wall -fstack-usage -fdata-sections -ffunction-sections
++CFLAGS = $(MCU) $(C_DEFS) $(C_INCLUDES) $(OPT) -Wall -fstack-usage -fdata-sections -ffunction-sections
+ # Generate dependency information
+ CFLAGS += -MMD -MP -MF"$(@:%.o=%.d)"
+ 
+diff --git a/Src/app.c b/Src/app.c
+index 7ec6ba6..8042f26 100644
+--- a/Src/app.c
++++ b/Src/app.c
+@@ -43,6 +43,7 @@
+ #include "stai.h"
+ #include "stai_network.h"
+ #include "utils.h"
++#include "det_emit.h"
+ 
+ #ifndef APP_VERSION_STRING
+ #define APP_VERSION_STRING "dev"
+@@ -113,15 +114,8 @@
+ #define BUTTON_TOGGLE_TRACKING BUTTON_USER
+ #endif
+ 
+-#ifdef TRACKER_MODULE
+-typedef struct {
+-  double cx;
+-  double cy;
+-  double w;
+-  double h;
+-  uint32_t id;
+-} tbox_info;
+-#endif
++/* tbox_info is now declared in det_emit.h (included above) so it can be shared
++ * with the detection emitter; the original file-local typedef lived here. */
+ 
+ typedef struct
+ {
+@@ -857,6 +851,28 @@ static void pp_thread_fct(void *arg)
+     ret = xSemaphoreGive(disp.lock);
+     assert(ret == pdTRUE);
+ 
++#if defined(APP_DET_EMIT) && (APP_DET_EMIT)
++    /* Emit one per-frame detection/occupancy line over USART1 for the host.
++     * Placed AFTER releasing disp.lock (UART TX is slow, must not stall the
++     * display thread) but BEFORE bqueue_put_free() frees the NN output buffer
++     * that pp_output.pOutBuff points into. disp.info is written only by this
++     * thread, so reading it here without the lock is safe (no other writer). */
++#ifdef TRACKER_MODULE
++    DetEmit_Frame(HAL_GetTick(),
++                  tracking_enabled ? (uint32_t)disp.info.tboxes_valid_nb
++                                   : (uint32_t)pp_output.nb_detect,
++                  disp.info.tboxes, (uint32_t)disp.info.tboxes_valid_nb,
++                  pp_output.pOutBuff, (uint32_t)pp_output.nb_detect,
++                  tracking_enabled);
++#else
++    DetEmit_Frame(HAL_GetTick(),
++                  (uint32_t)pp_output.nb_detect,
++                  NULL, 0u,
++                  pp_output.pOutBuff, (uint32_t)pp_output.nb_detect,
++                  0);
++#endif
++#endif
++
+     bqueue_put_free(&nn_output_queue);
+     /* It's possible xqueue is empty if display is slow. So don't check error code that may by pdFALSE in that case */
+     xSemaphoreGive(disp.update);
+diff --git a/Src/det_emit.c b/Src/det_emit.c
+new file mode 100644
+index 0000000..210c4e0
+--- /dev/null
++++ b/Src/det_emit.c
+@@ -0,0 +1,162 @@
++/**
++ ******************************************************************************
++ * @file    det_emit.c
++ * @brief   Per-frame person-detection / occupancy emitter over USART1.
++ *
++ * ADD-ON module (not part of the original ST sample). See det_emit.h for the
++ * wire protocol and the APP_DET_EMIT toggle. Output goes through the project's
++ * existing printf() redirection to USART1 (the ST-Link VCP); no new UART init.
++ ******************************************************************************
++ */
++
++#include "det_emit.h"
++
++#if defined(APP_DET_EMIT) && (APP_DET_EMIT)
++
++#include <stdio.h>
++#include <stddef.h>
++
++/* Cap emitted tuples to bound the USART1 line length / TX time. People
++ * detection rarely yields this many boxes; extras are simply not emitted. */
++#ifndef DET_EMIT_MAX_BOXES
++#define DET_EMIT_MAX_BOXES 16u
++#endif
++
++/* Worst case: "DET " + two u32 + count, then up to DET_EMIT_MAX_BOXES tuples
++ * of "<u32>:<0..1000>:<0..1000>:<0..1000>:<0..1000>:<0..100> " (~35 chars).
++ * 16 * 35 + ~32 ~= 592; round up generously. */
++#define DET_EMIT_LINE_MAX 768
++
++/* Compile-time proof that the line buffer can hold the header plus the capped
++ * number of full tuples (so the runtime path can never truncate / emit a
++ * partial tuple). Header: "DET " + 2x u32(10) + count + spaces + NUL slack.
++ * Tuple: " <u32>:1000:1000:1000:1000:100". If DET_EMIT_MAX_BOXES is raised,
++ * this fails the build instead of silently truncating on-wire. */
++#define DET_EMIT_HEADER_MAX 32u
++#define DET_EMIT_TUPLE_MAX  35u
++_Static_assert(DET_EMIT_LINE_MAX >=
++                 DET_EMIT_HEADER_MAX + DET_EMIT_MAX_BOXES * DET_EMIT_TUPLE_MAX,
++               "DET_EMIT_LINE_MAX too small for DET_EMIT_MAX_BOXES");
++
++/* Rate limit. The console printf is a BLOCKING, polling HAL_UART_Transmit at
++ * 115200 8N1 (~0.087 ms/char): a full line is tens of ms and runs in the pp
++ * thread, which holds the path that frees the NN output buffer. Emitting every
++ * frame therefore back-pressures inference fps. So we emit only on a CHANGE of
++ * occupancy count (events are immediate, including transitions to/from zero)
++ * plus a periodic keepalive so a steady state -- including a steady ZERO -- is
++ * still observable. Set DET_EMIT_KEEPALIVE_MS to 0 to emit every frame. */
++#ifndef DET_EMIT_KEEPALIVE_MS
++#define DET_EMIT_KEEPALIVE_MS 1000u
++#endif
++
++/* Per-frame counter, incremented once per emitted line. */
++static uint32_t det_emit_seq;
++
++/* Rate-limit state. det_emit_last_count starts at a value no real count can
++ * take so the very first frame always emits. */
++static uint32_t det_emit_last_count = 0xFFFFFFFFu;
++static uint32_t det_emit_last_ms;
++
++/* value (normalized 0..1) -> permille (0..1000), rounded and clamped.
++ *
++ * The range checks are done on the float BEFORE the cast so that a model that
++ * ever emits NaN/+/-inf can never reach the float->int conversion (which is
++ * undefined behaviour in C for out-of-range / non-finite inputs, and only
++ * happens to saturate by luck on this Cortex-M). NaN fails both comparisons:
++ * `!(v > 0.0f)` is true for NaN and for v <= 0 -> 0; `v >= 1.0f` is true for
++ * +inf and v >= 1 -> 1000. Only finite v in (0,1) reaches the cast. */
++static int det_emit_permille(float v)
++{
++  if (!(v > 0.0f)) return 0;      /* NaN, -inf, and v <= 0 */
++  if (v >= 1.0f)   return 1000;   /* +inf and v >= 1 */
++  return (int)(v * 1000.0f + 0.5f);
++}
++
++/* value (normalized 0..1) -> percent (0..100), rounded and clamped. Same
++ * NaN/inf-before-cast guard as det_emit_permille(). */
++static int det_emit_percent(float v)
++{
++  if (!(v > 0.0f)) return 0;      /* NaN, -inf, and v <= 0 */
++  if (v >= 1.0f)   return 100;    /* +inf and v >= 1 */
++  return (int)(v * 100.0f + 0.5f);
++}
++
++void DetEmit_Frame(uint32_t ts_ms, uint32_t count,
++                   const tbox_info *tboxes, uint32_t ntb,
++                   const od_pp_outBuffer_t *dets, uint32_t ndet,
++                   int tracking_on)
++{
++  char line[DET_EMIT_LINE_MAX];
++  uint32_t emit_nb;
++  uint32_t i;
++  int n;
++
++  (void)count; /* header count is derived from the active source below so that
++                * the printed count always equals the number of tuples. */
++
++  /* Select the source the overlay is showing this frame. */
++  if (tracking_on) {
++    emit_nb = (tboxes != NULL) ? ntb : 0u;
++  } else {
++    emit_nb = (dets != NULL) ? ndet : 0u;
++  }
++  if (emit_nb > DET_EMIT_MAX_BOXES)
++    emit_nb = DET_EMIT_MAX_BOXES;
++
++  /* Rate limit (see DET_EMIT_KEEPALIVE_MS): skip this frame unless the count
++   * changed or the keepalive interval has elapsed. Unsigned subtraction makes
++   * the elapsed-time test correct across the 49.7-day HAL_GetTick() wrap. */
++#if DET_EMIT_KEEPALIVE_MS
++  if (emit_nb == det_emit_last_count &&
++      (uint32_t)(ts_ms - det_emit_last_ms) < DET_EMIT_KEEPALIVE_MS) {
++    return;
++  }
++#endif
++  det_emit_last_count = emit_nb;
++  det_emit_last_ms = ts_ms;
++
++  /* Header. (unsigned long) casts keep %lu correct under arm-none-eabi ILP32. */
++  n = snprintf(line, sizeof(line), "DET %lu %lu %lu",
++               (unsigned long)det_emit_seq,
++               (unsigned long)ts_ms,
++               (unsigned long)emit_nb);
++
++  /* Tuples. Stop early if the buffer fills (snprintf returns the would-be
++   * length, so n >= sizeof(line) signals truncation). */
++  for (i = 0; i < emit_nb && n > 0 && (size_t)n < sizeof(line); i++) {
++    if (tracking_on) {
++      n += snprintf(line + n, sizeof(line) - (size_t)n,
++                    " %lu:%d:%d:%d:%d:%d",
++                    (unsigned long)tboxes[i].id,
++                    det_emit_permille((float)tboxes[i].cx),
++                    det_emit_permille((float)tboxes[i].cy),
++                    det_emit_permille((float)tboxes[i].w),
++                    det_emit_permille((float)tboxes[i].h),
++                    0 /* tracked boxes carry no confidence */);
++    } else {
++      n += snprintf(line + n, sizeof(line) - (size_t)n,
++                    " 0:%d:%d:%d:%d:%d",
++                    det_emit_permille(dets[i].x_center),
++                    det_emit_permille(dets[i].y_center),
++                    det_emit_permille(dets[i].width),
++                    det_emit_permille(dets[i].height),
++                    det_emit_percent(dets[i].conf));
++    }
++  }
++
++  printf("%s\n", line);
++  det_emit_seq++;
++}
++
++#else /* APP_DET_EMIT disabled: keep a no-op symbol so the call site links. */
++
++void DetEmit_Frame(uint32_t ts_ms, uint32_t count,
++                   const tbox_info *tboxes, uint32_t ntb,
++                   const od_pp_outBuffer_t *dets, uint32_t ndet,
++                   int tracking_on)
++{
++  (void)ts_ms; (void)count; (void)tboxes; (void)ntb;
++  (void)dets;  (void)ndet;  (void)tracking_on;
++}
++
++#endif /* APP_DET_EMIT */
