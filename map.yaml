@@ -1,0 +1,83 @@
+# Overwatch oversight map — structural intent for this repo.
+# A node goes green only when every verify command exits 0; a node with no
+# verify command carries no automated evidence and stays yellow, which is the
+# honest reading for anything that needs the Zephyr SDK, the board, a camera,
+# or a USB DFU session.
+project: STM32N6 Camera
+nodes:
+  app:
+    title: Camera app firmware
+    parent: project
+    purpose: >
+      The Zephyr application that runs on the board — USB-UVC webcam sample
+      forked into our own app, plus the frame-stats and USB descriptor code
+      we own.
+    intent: >
+      Invariant: the camera image never leaves the device — only anonymous
+      usage events are meant to leave the board (see host node). No verify
+      command: building needs the Zephyr SDK and west toolchain, and proving
+      the firmware actually works needs the physical board and camera, which
+      Overwatch does not run.
+    paths:
+      - "apps/camera-app/**"
+
+  board:
+    title: Board memory + patches
+    parent: project
+    purpose: >
+      Devicetree overlays that shape the board's RAM layout, plus the one
+      upstream driver patch we carry.
+    intent: >
+      Invariant: the BootROM only loads images into the 511 KB window at
+      0x34180400 — every overlay here either respects that window or exists
+      as a documented dead end (the bigram/axisram_noflex overlays). No
+      verify command: checking an overlay means linking a real build and
+      inspecting the link address, which needs the Zephyr SDK.
+    paths:
+      - "overlays/**"
+      - "patches/**"
+
+  tooling:
+    title: Build and flash tooling
+    parent: project
+    purpose: >
+      Shell scripts around the build: the SWD dev-flash loop, the serial-boot
+      preflight gate, camera capture/describe helpers, and host setup.
+    intent: >
+      preflight-flash.sh is the one gate standing between a bad link address
+      and a burned power-cycle session, so its own regression test is the one
+      thing here safe to run unattended. test-preflight.sh auto-discovers a
+      known-good and known-bad build under the gitignored build/ directory —
+      on a fresh clone with no builds yet it correctly FAILS (no builds means
+      the flash gate is unproven), and that red is the honest reading, not a
+      bug to paper over.
+    paths:
+      - "scripts/**"
+    verify:
+      - "bash scripts/test-preflight.sh"
+
+  host:
+    title: Host-side tools
+    parent: project
+    purpose: >
+      The occupancy-bridge (reads board events, forwards them) and
+      usage-report (turns events into a readable report) tools that run on
+      atlas rather than the board.
+    intent: >
+      No verify command yet — this tree exists on disk but is not committed
+      to the repo yet, so there is nothing for Overwatch to check against a
+      history.
+    paths:
+      - "host/**"
+
+  docs:
+    title: Docs
+    parent: project
+    purpose: >
+      What a reader is promised — the build/flash cheat sheet, the
+      architecture note, the boot-ROM/memory facts, the bring-up debug log,
+      and the backlog.
+    paths:
+      - "CLAUDE.md"
+      - "docs/**"
+      - ".gitignore"

@@ -8,3 +8,6 @@
 /build/
 __pycache__/
 *.pyc
+
+# oversight tool rendering (public repo)
+/.overwatch/
