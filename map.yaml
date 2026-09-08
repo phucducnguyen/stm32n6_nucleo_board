@@ -47,10 +47,10 @@ nodes:
       preflight-flash.sh is the one gate standing between a bad link address
       and a burned power-cycle session, so its own regression test is the one
       thing here safe to run unattended. test-preflight.sh auto-discovers a
-      known-good and known-bad build under the gitignored build/ directory —
-      on a fresh clone with no builds yet it correctly FAILS (no builds means
-      the flash gate is unproven), and that red is the honest reading, not a
-      bug to paper over.
+      known-good and known-bad build under the gitignored build/ directory; on
+      a fresh clone with no builds yet it SKIPS those two checks and passes on
+      the missing-build-dir check alone, so a green here proves the gate only
+      on a machine that has already built.
     paths:
       - "scripts/**"
     verify:
