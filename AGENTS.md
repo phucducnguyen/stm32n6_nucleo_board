@@ -1,4 +1,4 @@
-# CLAUDE.md — STM32N6 camera project cheat sheet
+# AGENTS.md — STM32N6 camera project cheat sheet
 
 Architecture → `docs/architecture.md` · Current state → `docs/HANDOVER.md` · Backlog → `docs/TODO.md` ·
 **Board/BootROM facts (researched + verified, read before touching boot/memory) → `docs/N6-FACTS.md`**.
