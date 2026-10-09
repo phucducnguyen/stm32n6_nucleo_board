@@ -10,26 +10,40 @@
 # Statuses are uppercase: PROVEN / NOT PROVEN / SKIPPED. See scripts/JUDGES.md.
 schema: judges/1
 repo: stm32n6
+# build/ is gitignored: linked read-only into the export. The mutations below touch scripts/ and sources only.
+workspace:
+  link: [build]
+coverage:
+  - {glob: "scripts/test-*.sh", name: "script-test:{basename}"}
+  - {dirs: "host/*", name: "host:{basename}"}
+  - {dirs: "apps/*", name: "app:{basename}"}
 judges:
   - id: preflight_gate
     claim: >-
       scripts/preflight-flash.sh accepts a build linked into the BootROM window
       0x34180400 (and within 511 KB) and rejects one linked outside it or missing.
-    command: bash scripts/test-preflight.sh
-    needs_build_dirs: true   # discovers good/bad builds under build/ (gitignored)
+    run: bash scripts/test-preflight.sh
+    covers: ["script-test:test-preflight.sh"]
+    # the script prints "skip:" and still exits 0 when it finds no good/bad build: demand all three cases ran
+    pass_match:
+      - "PASS: in-window build passes"
+      - "PASS: out-of-window build fails"
+      - "PASS: missing build dir fails"
     known_bad:
       - name: out_of_window_build
-        # existing, already-bad input: build/capture, build/capture-dbg, build/hello-ovl
-        # link at 0x34000000 (axisram1-relink overlay). The judge must reject it itself.
-        command: "true"
-        expect: "preflight-flash.sh exits non-zero on a build whose linker.cmd RAM ORIGIN is not 0x34180400 (judge case 'out-of-window build fails')"
-        note: no-op mutation; the bad input is the pre-built dir, produced by `west build -b nucleo_n657x0_q` with an overlay that sets zephyr,sram to axisram1 (docs/N6-FACTS.md)
+        # was a no-op `true` (the bad input is a pre-built dir, build/capture etc., linked at 0x34000000 by the
+        # axisram1-relink overlay); a case must be a mutation, so now: the gate's window check is switched off
+        # and the judge's own out-of-window case must catch that.
+        cmd: "sed -i 's/^if (( origin != WINDOW_ORIGIN_HEX )); then$/if false; then/' scripts/preflight-flash.sh"
+        match: "FAIL: out-of-window build fails \\(rc=0"
       - name: gate_accepts_wrong_origin
-        command: sed -i 's/^WINDOW_ORIGIN_HEX="0x34180400"/WINDOW_ORIGIN_HEX="0x34000000"/' scripts/preflight-flash.sh
-        expect: "FAIL: in-window build passes; FAIL: out-of-window build fails"
+        cmd: sed -i 's/^WINDOW_ORIGIN_HEX="0x34180400"/WINDOW_ORIGIN_HEX="0x34000000"/' scripts/preflight-flash.sh
+        match:
+          - "FAIL: in-window build passes"
+          - "FAIL: out-of-window build fails"
       - name: gate_window_size_collapsed
-        command: sed -i 's/^WINDOW_LEN_KB=511/WINDOW_LEN_KB=1/' scripts/preflight-flash.sh
-        expect: "FAIL: in-window build passes"
+        cmd: sed -i 's/^WINDOW_LEN_KB=511/WINDOW_LEN_KB=1/' scripts/preflight-flash.sh
+        match: "FAIL: in-window build passes"
     proof:
       status: PROVEN
       date: 2026-10-08
@@ -38,11 +52,13 @@ judges:
 
   - id: host_occupancy_bridge
     claim: The occupancy-bridge aggregator debounces counts and the protocol/verify/replay logic parses and emits as specified.
-    command: cd host/occupancy-bridge && python3 -m unittest discover -s tests
+    run: cd host/occupancy-bridge && python3 -m unittest discover -s tests
+    covers: ["host:occupancy-bridge"]
+    pass_match: "^OK$"
     known_bad:
       - name: debounce_off_by_one
-        command: sed -i '220s/>=/>/' host/occupancy-bridge/occbridge/aggregator.py
-        expect: "FAIL: test_first_baseline_zero_is_emitted (test_aggregator.TestDebounce)"
+        cmd: sed -i '220s/>=/>/' host/occupancy-bridge/occbridge/aggregator.py
+        match: "FAIL: test_first_baseline_zero_is_emitted \\(test_aggregator.TestDebounce"
     proof:
       status: PROVEN
       date: 2026-10-08
@@ -50,11 +66,13 @@ judges:
 
   - id: host_usage_report
     claim: The usage-report analyzer computes open-hours, utilization and peaks as specified.
-    command: cd host/usage-report && python3 -m unittest discover -s tests
+    run: cd host/usage-report && python3 -m unittest discover -s tests
+    covers: ["host:usage-report"]
+    pass_match: "^OK$"
     known_bad:
       - name: open_window_start_exclusive
-        command: sed -i '86s/start_min <= minute_of_day/start_min < minute_of_day/' host/usage-report/usagereport/analyze.py
-        expect: "FAIL: test_utilization (test_analyze.TestCoreOccupancy)"
+        cmd: sed -i '86s/start_min <= minute_of_day/start_min < minute_of_day/' host/usage-report/usagereport/analyze.py
+        match: "FAIL: test_utilization \\(test_analyze.TestCoreOccupancy"
     proof:
       status: PROVEN
       date: 2026-10-08
@@ -62,11 +80,14 @@ judges:
 
   - id: scripts_syntax
     claim: Every shell script under scripts/ parses (bash -n). No Makefile or CI exists in this repo; this is the only lint-class check.
-    command: for f in scripts/*.sh; do bash -n "$f" || exit 1; done
+    # set -e instead of `|| exit 1` (a wrapper the lint refuses); bash -n exits 2 on a syntax error, so fail_exit is [2]
+    run: set -e; for f in scripts/*.sh; do bash -n "$f"; done; echo "scripts_syntax: all scripts parse"
+    fail_exit: [2]
+    pass_match: "all scripts parse"
     known_bad:
       - name: unterminated_if
-        command: echo 'if true; then' >> scripts/cam-describe.sh
-        expect: "syntax error: unexpected end of file"
+        cmd: echo 'if true; then' >> scripts/cam-describe.sh
+        match: "syntax error: unexpected end of file"
     proof:
       status: PROVEN
       date: 2026-10-08
@@ -74,12 +95,21 @@ judges:
 
   - id: firmware_build
     claim: apps/camera-app builds for nucleo_n657x0_q and links into the BootROM window.
-    command: PATH="$PWD/.venv/bin:$PATH" west build -p -b nucleo_n657x0_q apps/camera-app -d build/judge-camera-app && bash scripts/preflight-flash.sh build/judge-camera-app
-    needs_toolchain: true
+    run: PATH="$PWD/.venv/bin:$HOME/STMicroelectronics/STM32CubeProgrammer/bin:$PATH" west build -p -b nucleo_n657x0_q apps/camera-app -d build/judge-camera-app && bash scripts/preflight-flash.sh build/judge-camera-app
+    class: heavy
+    covers: ["app:camera-app"]
+    requires: ["file:.venv/bin/west", "file:zephyr", "file:.west"]
+    pass_match: "preflight: PASS"
+    setup:
+      - link: .venv
+      - link: zephyr
+      - link: modules
+      - link: .west
     known_bad:
       - name: axisram1_relink_overlay
-        command: "west build with an overlay setting zephyr,sram to axisram1 (see docs/N6-FACTS.md; origin 0x34000000)"
-        expect: "preflight-flash.sh: image links to 0x34000000, not the BootROM window"
+        # UNVERIFIED (never built): axisram1 sits at 0x34000000, the BootROM refuses it, preflight must say so
+        cmd: "printf '/ { chosen { zephyr,sram = &axisram1; }; };\\n' >> apps/camera-app/app.overlay"
+        match: "image links to 0x34000000, not the BootROM window"
     proof:
       status: SKIPPED
       date: 2026-10-08
