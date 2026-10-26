@@ -215,7 +215,8 @@ judges:
         match: "FAIL: fresh zephyr lacks imx335-cold-boot-init.patch after west patch apply"
       - name: apply_command_noop
         # west patch apply checks the sha256, then runs `true` in zephyr/ instead of git apply
-        cmd: "sed -i 's/^    apply-command: git apply$/    apply-command: true/' patches/patches.yml"
+        # (quoted: a bare `true` is a YAML bool and west refuses the file before applying anything)
+        cmd: "sed -i 's/^    apply-command: git apply$/    apply-command: \"true\"/' patches/patches.yml"
         match: "FAIL: fresh zephyr lacks imx335-cold-boot-init.patch after west patch apply"
     proof:
       status: NOT PROVEN
