@@ -16,9 +16,11 @@ console UART (USART1 / ST-Link VCP, 115200 8N1) via the project's existing
 
 **Files:** new `Src/det_emit.c` + `Inc/det_emit.h`; `Src/app.c` (1 include, moved
 `tbox_info` typedef into the header, 1 call after `disp.lock` release); `Makefile`
-(+`Src/det_emit.c`, since sources are listed explicitly, not globbed).
+(+`Src/det_emit.c`, since sources are listed explicitly, not globbed; and the
+`-fcyclomatic-complexity` flag is stripped from `ASFLAGS`/`CFLAGS`, because
+mainline ARM GNU GCC rejects it).
 
 **Toggle:** `APP_DET_EMIT` in `det_emit.h` (default `1`); set `0` → emitter and
 call site compile to a no-op.
 
-**Status: UNBUILT / UNTESTED — pending arm-none-eabi toolchain + flash.**
+**Status: built and signed 2026-06-25 (`scripts/build-people-detect.sh`, ARM GNU 13.3; `DetEmit_Frame` linked), not yet flashed or verified on the board.**
