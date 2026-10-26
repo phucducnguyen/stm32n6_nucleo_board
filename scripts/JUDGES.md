@@ -16,7 +16,7 @@ require an exit code in `fail_exit` whose output matches every `match`. Only the
 Mutations never run on the working tree. The preflight judge reads gitignored `build/`, so link
 the real `build/` into the export read-only. `patch_applies` and `firmware_build` link the real
 `zephyr/`: both only read it (`git archive`, `git apply --reverse --check`); no judge may edit it.
-`firmware_build` is class `heavy` (a full west build, about 21 s with a warm toolchain).
+`firmware_build` is class `heavy` (a full west build, about 25 s with a warm toolchain).
 
 Add a judge: append an entry, give it at least one single-line mutation (a `sed` command, or a
 patch file as `fault:`), run it on an export, record `proof`. No proof means

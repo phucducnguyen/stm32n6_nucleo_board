@@ -15,7 +15,7 @@ nodes:
     intent: >
       Invariant: the camera image never leaves the device — only anonymous
       usage events are meant to leave the board (see host node). The verify
-      command builds the app (Zephyr SDK + .venv on this machine, about 21 s)
+      command builds the app (Zephyr SDK + .venv on this machine, about 25 s)
       and runs the preflight gate on the image; proving the firmware actually
       works still needs the physical board and camera, which Overwatch does
       not run.

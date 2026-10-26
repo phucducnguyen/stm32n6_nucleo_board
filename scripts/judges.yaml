@@ -91,8 +91,8 @@ judges:
         match: "syntax error: unexpected end of file"
     proof:
       status: PROVEN
-      date: 2026-10-08
-      failing_line: "scripts/cam-describe.sh: line 34: syntax error: unexpected end of file from `if' command on line 33"
+      date: 2026-10-26
+      failing_line: "scripts/cam-describe.sh: line 60: syntax error: unexpected end of file from `if' command on line 59"
 
   - id: patch_applies
     claim: >-
@@ -128,7 +128,13 @@ judges:
           sed -i "s/sha256sum: .*/sha256sum: $(sha256sum "$f" | cut -d' ' -f1)/" patches/patches.yml
         match: "FAIL: patched copy lacks the IMX335 cold-boot fix"
     proof:
-      status: NOT PROVEN
+      status: PROVEN
+      date: 2026-10-26
+      failing_line: "FAIL: zephyr/imx335-cold-boot-init.patch does not apply to zephyr 1f6485eca254: error: patch failed: drivers/video/imx335.c:682"
+      detail: >-
+        prove.py on aab86ae: clean run printed both PASS lines; patch_target_mismatch, patch_sha256_stale
+        ("FAIL: zephyr/imx335-cold-boot-init.patch: sha256 mismatch") and copy_without_the_fix
+        ("FAIL: patched copy lacks the IMX335 cold-boot fix") all rejected. zephyr/ working tree unchanged.
 
   - id: firmware_build
     claim: >-
@@ -148,7 +154,7 @@ judges:
       - link: .west
     known_bad:
       - name: axisram1_relink_overlay
-        # UNVERIFIED (never built): axisram1 sits at 0x34000000, the BootROM refuses it, preflight must say so
+        # axisram1 sits at 0x34000000, the BootROM refuses it, preflight must say so (built and rejected 2026-10-26)
         cmd: "printf '/ { chosen { zephyr,sram = &axisram1; }; };\\n' >> apps/camera-app/app.overlay"
         match: "image links to 0x34000000, not the BootROM window"
       - name: zephyr_lacks_patch
@@ -156,6 +162,11 @@ judges:
         cmd: sed -i 's/k_msleep(2);/k_msleep(3);/' patches/zephyr/imx335-cold-boot-init.patch
         match: "error: drivers/video/imx335.c: patch does not apply"
     proof:
-      status: SKIPPED
-      date: 2026-10-08
-      reason: full Zephyr build (minutes, needs STM32_SigningTool_CLI for a signed image, writes build/) is not a cheap check; the SDK and .venv are present but it was not run. The preflight_gate judge already covers the link-window rule on existing builds.
+      status: PROVEN
+      date: 2026-10-26
+      failing_line: "image links to 0x34000000, not the BootROM window 0x34180400."
+      detail: >-
+        prove.py on aab86ae: the clean build plus preflight passed in about 25 s (a full west build,
+        not minutes; STM32_SigningTool_CLI is installed, so the image is signed);
+        axisram1_relink_overlay rejected by preflight, zephyr_lacks_patch rejected by the reverse
+        check ("error: drivers/video/imx335.c: patch does not apply") before any build.
