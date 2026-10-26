@@ -17,6 +17,7 @@ coverage:
   - {glob: "scripts/test-*.sh", name: "script-test:{basename}"}
   - {dirs: "host/*", name: "host:{basename}"}
   - {dirs: "apps/*", name: "app:{basename}"}
+  - {dirs: "patches/*", name: "patches:{basename}"}
 judges:
   - id: preflight_gate
     claim: >-
@@ -93,9 +94,48 @@ judges:
       date: 2026-10-08
       failing_line: "scripts/cam-describe.sh: line 34: syntax error: unexpected end of file from `if' command on line 33"
 
+  - id: patch_applies
+    claim: >-
+      Every patch in patches/patches.yml matches its sha256 and applies cleanly to a copy of its
+      pinned Zephyr revision, and the patched copy carries the IMX335 cold-boot fix. Limit: this
+      proves the fix is in the source a build uses after `west patch apply`, not that the cold-boot
+      race is gone (that stays a bench claim).
+    # reads git objects from the linked zephyr/ (git archive into mktemp); never its working tree
+    run: bash scripts/check-zephyr-patches.sh
+    covers: ["patches:zephyr"]
+    requires: ["file:zephyr"]
+    setup:
+      - link: zephyr
+    pass_match:
+      - "PASS: zephyr/imx335-cold-boot-init.patch applies to zephyr 1f6485eca254"
+      - "PASS: patched copy carries the IMX335 cold-boot fix"
+    known_bad:
+      - name: patch_target_mismatch
+        # a context line no longer matches the pinned imx335.c; sha256 updated so only the apply can fail
+        cmd: |-
+          f=patches/zephyr/imx335-cold-boot-init.patch
+          sed -i 's/drv_data = dev->data;$/drv_data = dev->priv;/' "$f"
+          sed -i "s/sha256sum: .*/sha256sum: $(sha256sum "$f" | cut -d' ' -f1)/" patches/patches.yml
+        match: "FAIL: zephyr/imx335-cold-boot-init.patch does not apply to zephyr 1f6485eca254"
+      - name: patch_sha256_stale
+        cmd: sed -i 's/k_msleep(2);/k_msleep(3);/' patches/zephyr/imx335-cold-boot-init.patch
+        match: "FAIL: zephyr/imx335-cold-boot-init.patch: sha256 mismatch"
+      - name: copy_without_the_fix
+        # the patch still applies but no longer carries the cold-boot settle
+        cmd: |-
+          f=patches/zephyr/imx335-cold-boot-init.patch
+          sed -i 's|k_sleep(K_MSEC(5)); /\* T4 (cold-boot hardened) \*/|k_sleep(K_USEC(600)); /* T4 */|' "$f"
+          sed -i "s/sha256sum: .*/sha256sum: $(sha256sum "$f" | cut -d' ' -f1)/" patches/patches.yml
+        match: "FAIL: patched copy lacks the IMX335 cold-boot fix"
+    proof:
+      status: NOT PROVEN
+
   - id: firmware_build
-    claim: apps/camera-app builds for nucleo_n657x0_q and links into the BootROM window.
-    run: PATH="$PWD/.venv/bin:$HOME/STMicroelectronics/STM32CubeProgrammer/bin:$PATH" west build -p -b nucleo_n657x0_q apps/camera-app -d build/judge-camera-app && bash scripts/preflight-flash.sh build/judge-camera-app
+    claim: >-
+      apps/camera-app builds for nucleo_n657x0_q, from a zephyr/ that carries the IMX335 cold-boot
+      patch, and links into the BootROM window.
+    # the git apply --reverse --check is read-only on zephyr/ ($PWD, not .., because zephyr/ is a symlink in the export)
+    run: git -C zephyr apply --reverse --check "$PWD/patches/zephyr/imx335-cold-boot-init.patch" && echo "firmware_build: zephyr/ carries imx335-cold-boot-init.patch" && PATH="$PWD/.venv/bin:$HOME/STMicroelectronics/STM32CubeProgrammer/bin:$PATH" west build -p -b nucleo_n657x0_q apps/camera-app -d build/judge-camera-app && bash scripts/preflight-flash.sh build/judge-camera-app
     class: heavy
     covers: ["app:camera-app"]
     requires: ["file:.venv/bin/west", "file:zephyr", "file:.west"]
@@ -110,6 +150,10 @@ judges:
         # UNVERIFIED (never built): axisram1 sits at 0x34000000, the BootROM refuses it, preflight must say so
         cmd: "printf '/ { chosen { zephyr,sram = &axisram1; }; };\\n' >> apps/camera-app/app.overlay"
         match: "image links to 0x34000000, not the BootROM window"
+      - name: zephyr_lacks_patch
+        # the patch no longer matches what zephyr/ carries (as after a west update without west patch apply)
+        cmd: sed -i 's/k_msleep(2);/k_msleep(3);/' patches/zephyr/imx335-cold-boot-init.patch
+        match: "error: drivers/video/imx335.c: patch does not apply"
     proof:
       status: SKIPPED
       date: 2026-10-08

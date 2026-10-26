@@ -1,0 +1,33 @@
+# Zephyr-tree patches, in Zephyr's own `west patch` format (schema:
+# zephyr/scripts/schemas/patch-schema.yml). Zephyr is the manifest repo here,
+# so this file and the patch files live in this repo, not in zephyr/; pass
+# both paths explicitly (see AGENTS.md "Zephyr patches"):
+#
+#   west patch -b "$PWD/patches" -l "$PWD/patches/patches.yml" apply
+#
+# custom.base-rev is the Zephyr commit the patch is checked against by
+# scripts/check-zephyr-patches.sh (the patch_applies judge). Bump it with the
+# Zephyr pin. Only patches for the west workspace belong here: the ST
+# people-detect patch (st-people-uart-det-emit.patch) targets another tree.
+#
+# Hazard: the stock clean/checkout commands (`git clean -d -f -x`,
+# `git checkout .`) would wipe every local edit in zephyr/; they are blanked so
+# `west patch clean` is a no-op. Undo a patch by hand:
+#   git -C zephyr apply -R ../patches/zephyr/imx335-cold-boot-init.patch
+checkout-command: ""
+clean-command: ""
+patches:
+  - path: zephyr/imx335-cold-boot-init.patch
+    sha256sum: 72334b681886dd84f23fdbcc697fd31ba0a2b040457b9fb606f8f138d7e1ceb1
+    module: zephyr
+    author: ndp14s
+    email: phucducnguyen@users.noreply.github.com
+    date: 2026-06-14
+    upstreamable: true
+    apply-command: git apply
+    comments: |
+      IMX335 cold-boot init race: T4 settle 600 us -> 5 ms plus a bounded
+      retry of the first I2C register batch. Validated 3/3 cold flash boots
+      2026-06-14 (docs/camera-bringup-debug-log.md).
+    custom:
+      base-rev: 1f6485eca25431b5ff27ce9a754218c9e559bbbb
