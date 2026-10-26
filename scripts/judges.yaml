@@ -135,7 +135,8 @@ judges:
       apps/camera-app builds for nucleo_n657x0_q, from a zephyr/ that carries the IMX335 cold-boot
       patch, and links into the BootROM window.
     # the git apply --reverse --check is read-only on zephyr/ ($PWD, not .., because zephyr/ is a symlink in the export)
-    run: git -C zephyr apply --reverse --check "$PWD/patches/zephyr/imx335-cold-boot-init.patch" && echo "firmware_build: zephyr/ carries imx335-cold-boot-init.patch" && PATH="$PWD/.venv/bin:$HOME/STMicroelectronics/STM32CubeProgrammer/bin:$PATH" west build -p -b nucleo_n657x0_q apps/camera-app -d build/judge-camera-app && bash scripts/preflight-flash.sh build/judge-camera-app
+    # builds into judge-build/ inside the export: build/ is a shared link, and parallel cases in one build dir collide
+    run: git -C zephyr apply --reverse --check "$PWD/patches/zephyr/imx335-cold-boot-init.patch" && echo "firmware_build: zephyr/ carries imx335-cold-boot-init.patch" && PATH="$PWD/.venv/bin:$HOME/STMicroelectronics/STM32CubeProgrammer/bin:$PATH" west build -p -b nucleo_n657x0_q apps/camera-app -d judge-build && bash scripts/preflight-flash.sh judge-build
     class: heavy
     covers: ["app:camera-app"]
     requires: ["file:.venv/bin/west", "file:zephyr", "file:.west"]
