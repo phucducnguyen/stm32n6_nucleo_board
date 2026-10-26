@@ -23,7 +23,7 @@ cd ~/projects/stm32n6
 export PATH="$PWD/.venv/bin:$PATH"
 west build -p -b 'nucleo_n657x0_q//sb' apps/camera-app -d build/camera-app
 scripts/swd-run.sh build/camera-app      # BOOT1 parked in dev boot
-scripts/cam-stream.sh                    # ustreamer on :8090
+scripts/cam-stream.sh                    # ustreamer on 127.0.0.1:8091
 ```
 
 Plain `nucleo_n657x0_q` (no `//sb`) for a signed flash-boot image, shipped via
@@ -54,7 +54,7 @@ buffer in uncached memory — sample it. Set stride 1 only to reproduce the cost
 ## Known constraints
 
 - `CONFIG_LOG_MODE_IMMEDIATE=y` in `prj.conf` is **load-bearing** until the
-  imx335 boot-timing race is fixed in the driver (see root `CLAUDE.md`
+  imx335 boot-timing race is fixed in the driver (see root `AGENTS.md`
   §Debugging).
 - Image must fit the 511 KB BootROM window; the 1.25 MB frame pool lives in
   the runtime-only `AXISRAM1` region (`app.overlay`).

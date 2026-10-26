@@ -14,28 +14,35 @@ nodes:
       we own.
     intent: >
       Invariant: the camera image never leaves the device — only anonymous
-      usage events are meant to leave the board (see host node). No verify
-      command: building needs the Zephyr SDK and west toolchain, and proving
-      the firmware actually works needs the physical board and camera, which
-      Overwatch does not run.
+      usage events are meant to leave the board (see host node). The verify
+      command builds the app (Zephyr SDK + .venv on this machine, about 21 s)
+      and runs the preflight gate on the image; proving the firmware actually
+      works still needs the physical board and camera, which Overwatch does
+      not run.
     paths:
       - "apps/camera-app/**"
+    verify:
+      - "PATH=\"$PWD/.venv/bin:$HOME/STMicroelectronics/STM32CubeProgrammer/bin:$PATH\" west build -p -b nucleo_n657x0_q apps/camera-app -d build/judge-camera-app && bash scripts/preflight-flash.sh build/judge-camera-app"
 
   board:
     title: Board memory + patches
     parent: project
     purpose: >
       Devicetree overlays that shape the board's RAM layout, plus the one
-      upstream driver patch we carry.
+      upstream driver patch we carry (patches/zephyr/, applied with
+      `west patch`).
     intent: >
       Invariant: the BootROM only loads images into the 511 KB window at
       0x34180400 — every overlay here either respects that window or exists
-      as a documented dead end (the bigram/axisram_noflex overlays). No
-      verify command: checking an overlay means linking a real build and
-      inspecting the link address, which needs the Zephyr SDK.
+      as a documented dead end (the bigram/axisram_noflex overlays). The
+      verify command checks the IMX335 cold-boot patch against a copy of the
+      pinned Zephyr revision (never the zephyr/ working tree); overlays are
+      checked by the app node's build.
     paths:
       - "overlays/**"
       - "patches/**"
+    verify:
+      - "bash scripts/check-zephyr-patches.sh"
 
   tooling:
     title: Build and flash tooling
@@ -64,11 +71,13 @@ nodes:
       usage-report (turns events into a readable report) tools that run on
       atlas rather than the board.
     intent: >
-      No verify command yet — this tree exists on disk but is not committed
-      to the repo yet, so there is nothing for Overwatch to check against a
-      history.
+      Both packages are stdlib unit-tested; the verify commands run those
+      suites.
     paths:
       - "host/**"
+    verify:
+      - "cd host/occupancy-bridge && python3 -m unittest discover -s tests"
+      - "cd host/usage-report && python3 -m unittest discover -s tests"
 
   docs:
     title: Docs
@@ -78,7 +87,6 @@ nodes:
       architecture note, the boot-ROM/memory facts, the bring-up debug log,
       and the backlog.
     paths:
-      - "CLAUDE.md"
       - "AGENTS.md"
       - "docs/**"
       - ".gitignore"

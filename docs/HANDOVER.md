@@ -140,12 +140,12 @@ sync crutch (big deferred buffer) now that the race no longer needs it.
 **CAMERA FULLY WORKING, end to end.** The board runs the Zephyr UVC
 sample (`build/uvc` — known-good fallback binary, do not delete) and is a
 standard USB webcam on atlas (`/dev/video0`); live browser stream via
-ustreamer at `http://<host-lan-ip>:8090/stream` (LAN, ufw rule added; also via
-Tailscale); on-demand AI scene description through hotchocolate's qwen3-vl.
+ustreamer (`scripts/cam-stream.sh`; since 2026-10-26 it binds 127.0.0.1:8091 by
+default, wider bind opt-in); on-demand AI scene description through a LAN Ollama vision model.
 M1 "first light" is DONE and then some.
 
 The whole "silent boot" saga resolved as three stacked causes (full story:
-`docs/camera-bringup-debug-log.md`, traps codified in `CLAUDE.md` §Debugging):
+`docs/camera-bringup-debug-log.md`, traps codified in `AGENTS.md` §Debugging):
 1. **Dead USB cable** — board logged fine all along; we debugged a ghost.
 2. **Log-drop trap** — `CONFIG_LOG_PRINTK=y` + deferred 1 KB buffer silently
    ate ALL init-time output incl. the driver's own LOG_ERRs. Cure baked into
@@ -161,8 +161,8 @@ The whole "silent boot" saga resolved as three stacked causes (full story:
   cycles, no DFU, no signing. Hard-won: **only `-hardRst`** — a software
   `-rst` bricks AP1 until the next hardware reset. Serial-boot DFU
   (`preflight-flash.sh`) stays for flash-boot shipping only.
-- **Webcam demo:** `scripts/cam-stream.sh` (ustreamer, apt-installed, :8090)
-  and `scripts/cam-describe.sh ["prompt"]` (one frame → qwen3-vl → text; GPU
+- **Webcam demo:** `scripts/cam-stream.sh` (ustreamer, apt-installed, loopback :8091 by default)
+  and `scripts/cam-describe.sh ["prompt"]` (one frame → Ollama vision model from `OLLAMA_URL`/`OLLAMA_MODEL` → text; GPU
   used ONLY on demand — user explicitly wants no background AI).
 
 **Working builds:** `build/uvc` (UVC webcam, VGA, 30 dB gain) ·
@@ -174,9 +174,9 @@ UVC needs the 1.25 MB pool configs to advertise 640x480 (else only 48x31).
 cold-boot fix (settle + retry), a clean upstream-worthy diff. The DBGMARK printk
 markers (video_common/video_ctrls/imx335/dcmipp) were reverted post-validation,
 and the two UVC sample `main.c` files were reverted after the camera-app verify
-(2026-06-13). The fix is also saved as `patches/imx335-cold-boot-init.patch` so
-it survives a `west update`/tree reset; re-apply with
-`git -C zephyr apply ../patches/imx335-cold-boot-init.patch`.
+(2026-06-13). The fix is also saved as `patches/zephyr/imx335-cold-boot-init.patch` so
+it survives a `west update`/tree reset; since 2026-10-26 it is re-applied with
+`west patch` (`patches/patches.yml`, AGENTS.md "Zephyr patches").
 
 **NEXT SESSION candidates (after the camera-app hardware verify above):**
 (1) fix the timing race properly (then drop the sync-logging requirement +
@@ -202,7 +202,7 @@ Camera bring-up — where it actually stands (debugged 2026-06-11):
 - **Memory layout is RULED OUT as the cause.** The pool's named region is `(NOLOAD)` in `linker.cmd` → C-startup never copies/zeroes FLEXRAM `0x34000000`. The old "FLEXRAM-as-pool" suspicion is dead.
 - Boot order (`zephyr/kernel/init.c` `bg_thread_main`): `POST_KERNEL` device init (line 302) runs *before* `boot_banner()` (line 311). DCMIPP + IMX335 are `POST_KERNEL`. **But** verbose video logging printed nothing either → execution dies **before** `POST_KERNEL`, i.e. earlier than the camera drivers. So the fault is in what the camera DT/shield changes at `PRE_KERNEL` (pinctrl / GPIO hogs / clock tree for the CSI+DCMIPP path), in the secure/serial-boot context. Hello (same board, no shield) does NOT hit it.
 
-New serial-boot facts learned this session (now in N6-FACTS + CLAUDE.md):
+New serial-boot facts learned this session (now in N6-FACTS + AGENTS.md):
 - A **refused** download ("failed to download Sector[0]", wrong link address) **consumes the one-shot DFU session** and zombifies it → the next push segfaults (exit -11). Lost a power cycle to this.
 - Hence **`scripts/preflight-flash.sh`** (gate) + **`scripts/test-preflight.sh`** (regression test): never `west flash` bare again; preflight checks link address/fit/signed/DFU-armed before pushing.
 

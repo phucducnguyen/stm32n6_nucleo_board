@@ -16,7 +16,7 @@ This board is the on-device vision node for a **vision-grade local occupancy sen
 
 | Path | What | Git |
 |---|---|---|
-| `zephyr/` | Zephyr **v4.4.1, pinned**, shallow clone | own repo, do NOT commit here; patches go in `overlays/` or app dirs |
+| `zephyr/` | Zephyr **v4.4.1, pinned**, shallow clone | own repo, do NOT commit here; Zephyr-tree patches live in `patches/` (`west patch` format), everything else in `overlays/` or app dirs |
 | `modules/` | only `cmsis`, `cmsis_6`, `hal_stm32` (narrowed) | west-managed |
 | `.venv/` | west + **cmake + ninja as pip wheels** + all Zephyr py deps | gitignored |
 | `overlays/` | our devicetree overlays (see RAM invariant below) | tracked |
@@ -40,6 +40,26 @@ west build -p -b 'nucleo_n657x0_q//sb' apps/camera-app -d build/camera-app
 ```
 
 (drop the `//sb` and use the plain board name for the flash-boot build)
+
+**Zephyr patches (after a fresh clone or any `west update`).** The tree must
+carry `patches/zephyr/imx335-cold-boot-init.patch` (the IMX335 cold-boot fix;
+without it flash boots race the sensor). It is applied with Zephyr's own
+`west patch`, sha256-checked against `patches/patches.yml`. Zephyr is the
+manifest repo, so pass both paths:
+
+```sh
+west patch -b "$PWD/patches" -l "$PWD/patches/patches.yml" apply
+```
+
+It is not idempotent: on a tree that already carries the fix it fails with
+"patch does not apply". Check first with
+`git -C zephyr apply --reverse --check "$PWD/patches/zephyr/imx335-cold-boot-init.patch"`
+(exit 0 = already applied). `west patch clean` is blanked to a no-op in
+`patches.yml` (the stock one runs `git clean -d -f -x` in `zephyr/`).
+`scripts/check-zephyr-patches.sh` checks the patch against a copy of the pinned
+revision without touching `zephyr/`. `patches/st-people-uart-det-emit.patch`
+is not in that set: it targets the ST people-detect tree
+(`scripts/build-people-detect.sh`).
 
 Upstream samples can still be built as references; they need the full flag set
 on the command line — `--shield st_b_cams_imx_mb1854`,
@@ -115,7 +135,7 @@ Full story: `docs/camera-bringup-debug-log.md`. The three traps, in order of pai
 
 ## Conventions (inherited from nebula where they apply)
 
-- Edit in place; this repo is local-only (no remote — don't add one without being asked).
+- Edit in place. The repo has one GitHub remote (`origin`, public): pushes are the owner's call; scan for private paths and secrets before any push; add no other remote without being asked.
 - No `Co-Authored-By` trailers in commits.
 - No secrets here, and there should never be any (it's firmware; tokens don't belong in this tree).
 - Record design choices in `docs/architecture.md` § Decisions as they happen.

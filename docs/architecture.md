@@ -1,6 +1,6 @@
 # Architecture — STM32N6 Zephyr camera
 
-System-level view. Operational commands → root `CLAUDE.md`. State → `HANDOVER.md`.
+System-level view. Operational commands → root `AGENTS.md`. State → `HANDOVER.md`.
 
 ## Hardware
 
@@ -67,10 +67,10 @@ devicetree wiring (this is where board/camera meet):
   shield st_b_cams_imx_mb1854  ── declares imx335 node on csi_i2c, CSI-2 2-lane link,
   │                               chosen zephyr,camera = &csi_capture_port
   board nucleo_n657x0_q        ── csi_connector gpio map, csi pins, clocks (IC18 = 27 MHz CSIPHY)
-  our overlay                  ── vidpool: buffer pool → named region AXISRAM1 (see CLAUDE.md invariants)
+  our overlay                  ── vidpool: buffer pool → named region AXISRAM1 (see AGENTS.md invariants)
 ```
 
-Build composition = board dts + shield overlay + our `EXTRA_DTC_OVERLAY_FILE` + Kconfig fragments on the command line. No Zephyr-tree patches; everything we own sits outside `zephyr/`.
+Build composition = board dts + shield overlay + our `EXTRA_DTC_OVERLAY_FILE` + Kconfig fragments on the command line. One Zephyr-tree patch, the IMX335 cold-boot fix: it lives in `patches/zephyr/` with `patches/patches.yml` and is applied by `west patch apply` after a `west update` (AGENTS.md "Zephyr patches"); `zephyr/` itself is never committed to. Everything else we own sits outside `zephyr/`.
 
 ## Product role (Edge Kit wedge)
 
@@ -101,5 +101,5 @@ atlas (this machine) is the dev host. Self-contained: `.venv` (west, cmake, ninj
 - **2026-06-11 — Synchronous logging for all camera debugging** (`overlays/debug-logging.conf`, `CONFIG_LOG_MODE_IMMEDIATE=y`): the sample's deferred 1 KB log buffer + `CONFIG_LOG_PRINTK=y` silently dropped ALL init-time output (even printk), hiding the real camera failure for days. Side effect: the slower boot also *masks* the imx335 boot-timing race, so camera builds currently REQUIRE this fragment until the race is fixed in the driver.
 - **2026-06-11 — Dev boot + `scripts/swd-run.sh` is the dev flash loop**, replacing serial-boot DFU: BOOT1 parked in dev boot keeps SWD open; hard-reset + RAM load + manual VTOR/MSP/PC + run gives unlimited, signing-free iterations with zero power cycles, and restores debugger access. Serial-boot DFU (`preflight-flash.sh`) is kept for flash-boot shipping. Verified gotcha: software `-rst` makes AP1 unreachable until a hardware reset — the script uses `-hardRst` only.
 - **2026-06-11 — Frame export = USB UVC, not UART/TCP**: the upstream UVC sample turns the board into a standard USB webcam on CN8 (M2 had planned UART hexdump vs TCP; UVC beats both — standard, 30 fps, zero host deps). Host side: ustreamer (apt) serves the browser stream + `/snapshot`; chosen over a hand-rolled `ffmpeg -listen` loop, which proved single-client, gap-prone, and browser-hostile (Content-Type pitfalls).
-- **2026-06-11 — AI sight is strictly on-demand** (`scripts/cam-describe.sh` → qwen3-vl on hotchocolate): no background watcher — the GPU is shared with other Nebula services and the user wants explicit control over when it's used.
+- **2026-06-11 — AI sight is strictly on-demand** (`scripts/cam-describe.sh` → a vision model on an Ollama server named by `OLLAMA_URL` / `OLLAMA_MODEL`, no default model): no background watcher — the GPU is shared with other services and the user wants explicit control over when it's used.
 - **2026-06-12 — UVC sample forked into `apps/camera-app` (own the code, stop building samples).** Sample-first bring-up served its purpose (M1 done); from here we build on our own application. The fork is self-contained — shield in CMakeLists, vidpool+uvc devicetree in `app.overlay`, pool/logging configs in `prj.conf` — so the build line needs no flags. Deliberate divergences from upstream: video-encoder (`zephyr,videoenc`) paths deleted (no such hardware here), USB descriptors owned via `src/app_usbd.c` + `APP_USBD_*` Kconfig (upstream's `SAMPLE_USBD_*` is sample-scoped by policy), startup analogue gain as `CONFIG_APP_CAMERA_ANALOGUE_GAIN_MDB` (replaces the temp sample edit). Driver-level work (imx335 timing race) stays OUT of the app — it belongs in the driver as an upstreamable patch. Capture sample is not forked; it remains an upstream-built reference.
