@@ -135,8 +135,8 @@ judges:
           sed -i "s/sha256sum: .*/sha256sum: $(sha256sum "$f" | cut -d' ' -f1)/" patches/patches.yml
         match: "FAIL: patched copy lacks the IMX335 cold-boot fix \\(drivers/video/imx335.c: no 'if \\(attempt >= 10\\) \\{'\\)"
       - name: apply_command_noop
-        # west patch apply would run `true` and apply nothing
-        cmd: "sed -i 's/^    apply-command: git apply$/    apply-command: true/' patches/patches.yml"
+        # west patch apply would run `true` and apply nothing (quoted: a bare `true` is a YAML bool west refuses)
+        cmd: "sed -i 's/^    apply-command: git apply$/    apply-command: \"true\"/' patches/patches.yml"
         match: "FAIL: zephyr/imx335-cold-boot-init.patch: apply-command is 'true', expected 'git apply'"
       - name: module_not_zephyr
         cmd: "sed -i 's/^    module: zephyr$/    module: modules\\/hal\\/stm32/' patches/patches.yml"

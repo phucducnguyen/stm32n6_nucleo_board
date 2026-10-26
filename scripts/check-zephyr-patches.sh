@@ -31,13 +31,14 @@ FIX_GONE='k_sleep(K_USEC(600));'
 git -C "$ZEPHYR" rev-parse --git-dir >/dev/null 2>&1 || { echo "FAIL: no Zephyr git repo at $ZEPHYR"; exit 1; }
 
 # One line per patch: path|sha256|base-rev|module|apply-command (our own flat
-# layout of the file). apply-command absent = the schema default, git apply.
+# layout of the file). apply-command absent = the schema default, git apply;
+# YAML quotes are stripped (a bare `true` is a bool west refuses, "true" a string it runs).
 entries=$(awk '
 	function out() { print p "|" s "|" r "|" m "|" a }
 	/^  - path:/ { if (p) out(); p=$3; s=""; r=""; m=""; a="git apply" }
 	/^    sha256sum:/ { s=$2 }
 	/^    module:/ { m=$2 }
-	/^    apply-command:/ { sub(/^    apply-command: */, ""); a=$0 }
+	/^    apply-command:/ { sub(/^    apply-command: */, ""); a=$0; if (a ~ "^\".*\"$" || a ~ "^\047.*\047$") a=substr(a, 2, length(a) - 2) }
 	/^      base-rev:/ { r=$2 }
 	END { if (p) out() }' "$YML")
 [[ -n "$entries" ]] || { echo "FAIL: $YML lists no patches"; exit 1; }
