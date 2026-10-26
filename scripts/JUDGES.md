@@ -17,6 +17,9 @@ Mutations never run on the working tree. The preflight judge reads gitignored `b
 the real `build/` into the export read-only. `patch_applies` and `firmware_build` link the real
 `zephyr/`: both only read it (`git archive`, `git apply --reverse --check`); no judge may edit it.
 `firmware_build` is class `heavy` (a full west build, about 25 s with a warm toolchain).
+`firmware_build_fresh` (also `heavy`, about 25 s) builds in a throwaway west workspace instead: a
+`git clone --shared` of `zephyr/` at its HEAD, `modules/` symlinked, then the documented `west patch apply`;
+it only reads `zephyr/`'s objects, and its known-bad cases make the patch step apply nothing.
 
 Add a judge: append an entry, give it at least one single-line mutation (a `sed` command, or a
 patch file as `fault:`), run it on an export, record `proof`. No proof means

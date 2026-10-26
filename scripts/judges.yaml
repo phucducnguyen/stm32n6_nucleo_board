@@ -219,6 +219,11 @@ judges:
         cmd: "sed -i 's/^    apply-command: git apply$/    apply-command: \"true\"/' patches/patches.yml"
         match: "FAIL: fresh zephyr lacks imx335-cold-boot-init.patch after west patch apply"
     proof:
-      status: NOT PROVEN
+      status: PROVEN
       date: 2026-10-26
-      reason: not yet run through prove.py
+      failing_line: "FAIL: fresh zephyr lacks imx335-cold-boot-init.patch after west patch apply"
+      detail: >-
+        prove.py on 20131f1: the clean run printed all three pass lines ("1 patches applied
+        successfully", then a full west build from the fresh tree and the verify-only preflight) in
+        about 24 s; no_patch_step and apply_command_noop both rejected by the fix-presence check
+        before any build (about 5 s each). zephyr/ working tree unchanged.
