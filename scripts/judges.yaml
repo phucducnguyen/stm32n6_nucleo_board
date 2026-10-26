@@ -108,7 +108,7 @@ judges:
       - link: zephyr
     pass_match:
       - "PASS: zephyr/imx335-cold-boot-init.patch applies to zephyr 1f6485eca254"
-      - "PASS: patched copy carries the IMX335 cold-boot fix"
+      - "PASS: patched copy carries the IMX335 cold-boot fix \\(5 ms settle, bounded retry\\)"
     known_bad:
       - name: patch_target_mismatch
         # a context line no longer matches the pinned imx335.c; sha256 updated so only the apply can fail
@@ -120,13 +120,27 @@ judges:
       - name: patch_sha256_stale
         cmd: sed -i 's/k_msleep(2);/k_msleep(3);/' patches/zephyr/imx335-cold-boot-init.patch
         match: "FAIL: zephyr/imx335-cold-boot-init.patch: sha256 mismatch"
-      - name: copy_without_the_fix
-        # the patch still applies but no longer carries the cold-boot settle
+      - name: settle_reverted_comment_kept
+        # the T4 settle goes back to 600 us; the "cold-boot hardened" comment stays
         cmd: |-
           f=patches/zephyr/imx335-cold-boot-init.patch
-          sed -i 's|k_sleep(K_MSEC(5)); /\* T4 (cold-boot hardened) \*/|k_sleep(K_USEC(600)); /* T4 */|' "$f"
+          sed -i 's|^+\t\tk_sleep(K_MSEC(5)); /\* T4 (cold-boot hardened) \*/|+\t\tk_sleep(K_USEC(600)); /* T4 (cold-boot hardened) */|' "$f"
           sed -i "s/sha256sum: .*/sha256sum: $(sha256sum "$f" | cut -d' ' -f1)/" patches/patches.yml
-        match: "FAIL: patched copy lacks the IMX335 cold-boot fix"
+        match: "FAIL: patched copy lacks the IMX335 cold-boot fix \\(drivers/video/imx335.c: no 'k_sleep\\(K_MSEC\\(5\\)\\);'\\)"
+      - name: retry_disabled_comment_kept
+        # the first failure bails again (no retry); comments unchanged
+        cmd: |-
+          f=patches/zephyr/imx335-cold-boot-init.patch
+          sed -i 's/if (attempt >= 10) {/if (attempt >= 0) {/' "$f"
+          sed -i "s/sha256sum: .*/sha256sum: $(sha256sum "$f" | cut -d' ' -f1)/" patches/patches.yml
+        match: "FAIL: patched copy lacks the IMX335 cold-boot fix \\(drivers/video/imx335.c: no 'if \\(attempt >= 10\\) \\{'\\)"
+      - name: apply_command_noop
+        # west patch apply would run `true` and apply nothing
+        cmd: "sed -i 's/^    apply-command: git apply$/    apply-command: true/' patches/patches.yml"
+        match: "FAIL: zephyr/imx335-cold-boot-init.patch: apply-command is 'true', expected 'git apply'"
+      - name: module_not_zephyr
+        cmd: "sed -i 's/^    module: zephyr$/    module: modules\\/hal\\/stm32/' patches/patches.yml"
+        match: "FAIL: zephyr/imx335-cold-boot-init.patch: module is 'modules/hal/stm32', expected zephyr"
     proof:
       status: PROVEN
       date: 2026-10-26
