@@ -146,9 +146,11 @@ judges:
       date: 2026-10-26
       failing_line: "FAIL: zephyr/imx335-cold-boot-init.patch does not apply to zephyr 1f6485eca254: error: patch failed: drivers/video/imx335.c:682"
       detail: >-
-        prove.py on aab86ae: clean run printed both PASS lines; patch_target_mismatch, patch_sha256_stale
-        ("FAIL: zephyr/imx335-cold-boot-init.patch: sha256 mismatch") and copy_without_the_fix
-        ("FAIL: patched copy lacks the IMX335 cold-boot fix") all rejected. zephyr/ working tree unchanged.
+        prove.py on 21d36c6: clean run printed both PASS lines; all six cases rejected:
+        patch_target_mismatch, patch_sha256_stale, settle_reverted_comment_kept ("no
+        'k_sleep(K_MSEC(5));'"), retry_disabled_comment_kept ("no 'if (attempt >= 10) {'"),
+        apply_command_noop ("apply-command is 'true', expected 'git apply'") and module_not_zephyr.
+        zephyr/ working tree unchanged.
 
   - id: firmware_build
     claim: >-
