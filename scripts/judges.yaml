@@ -186,3 +186,38 @@ judges:
         not minutes; STM32_SigningTool_CLI is installed, so the image is signed);
         axisram1_relink_overlay rejected by preflight, zephyr_lacks_patch rejected by the reverse
         check ("error: drivers/video/imx335.c: patch does not apply") before any build.
+
+  - id: firmware_build_fresh
+    claim: >-
+      A fresh Zephyr at the pinned revision, after the documented `west patch -b "$PWD/patches"
+      -l "$PWD/patches/patches.yml" apply`, carries the IMX335 cold-boot fix, builds
+      apps/camera-app for nucleo_n657x0_q from that tree, and passes the verify-only preflight.
+      firmware_build builds against zephyr/, which carries the fix as a hand edit; this one does not.
+    # throwaway west workspace under ~/.cache/stm32n6-fresh: git clone --shared of zephyr/ (reads its
+    # objects only), modules/ symlinked, .west/config copied; removed on exit
+    run: bash scripts/check-fresh-build.sh
+    class: heavy
+    covers: ["app:camera-app", "patches:zephyr"]
+    requires: ["file:.venv/bin/west", "file:zephyr", "file:modules", "file:.west"]
+    pass_match:
+      - "PASS: west patch apply put the IMX335 cold-boot fix into fresh zephyr 1f6485eca254"
+      - "PASS: camera-app built for nucleo_n657x0_q from fresh zephyr 1f6485eca254 with the patched drivers/video/imx335.c"
+      - "preflight: PASS \\(verify-only; not flashing\\)"
+    setup:
+      - link: .venv
+      - link: zephyr
+      - link: modules
+      - link: .west
+    known_bad:
+      - name: no_patch_step
+        # patches.yml lists no patch, so the patch step applies nothing: the fresh tree is stock Zephyr
+        cmd: "sed -i '/^patches:$/,$d' patches/patches.yml && echo 'patches: []' >> patches/patches.yml"
+        match: "FAIL: fresh zephyr lacks imx335-cold-boot-init.patch after west patch apply"
+      - name: apply_command_noop
+        # west patch apply checks the sha256, then runs `true` in zephyr/ instead of git apply
+        cmd: "sed -i 's/^    apply-command: git apply$/    apply-command: true/' patches/patches.yml"
+        match: "FAIL: fresh zephyr lacks imx335-cold-boot-init.patch after west patch apply"
+    proof:
+      status: NOT PROVEN
+      date: 2026-10-26
+      reason: not yet run through prove.py
