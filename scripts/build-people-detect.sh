@@ -46,7 +46,7 @@ for arg in "$@"; do
 	case "$arg" in
 	--webcam) WEBCAM=1 ;;
 	--no-sign) DO_SIGN=0 ;;
-	-h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+	-h|--help) sed -n '2,35p' "$0"; exit 0 ;;
 	*) echo "build: unknown argument '$arg' (use --webcam, --no-sign)" >&2; exit 2 ;;
 	esac
 done
