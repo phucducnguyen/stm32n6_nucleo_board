@@ -156,7 +156,9 @@ judges:
       date: 2026-10-26
       failing_line: "FAIL: zephyr/imx335-cold-boot-init.patch does not apply to zephyr 1f6485eca254: error: patch failed: drivers/video/imx335.c:682"
       detail: >-
-        prove.py on 47da570 (apply_command_noop now the quoted "true" west accepts, YAML quotes
+        prove.py on 33d031b: clean run passed, 8/8 rejected, including hollow_patch_fix_in_comments
+        (fix lines only in comments; the old grep over the whole file passed it) and
+        base_rev_not_the_pin. Before: prove.py on 47da570 (apply_command_noop now the quoted "true" west accepts, YAML quotes
         stripped by the check): clean run printed both PASS lines; all six cases rejected:
         patch_target_mismatch, patch_sha256_stale, settle_reverted_comment_kept ("no
         'k_sleep(K_MSEC(5));'"), retry_disabled_comment_kept ("no 'if (attempt >= 10) {'"),
