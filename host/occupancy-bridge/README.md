@@ -5,7 +5,7 @@ person detection (TinyYOLOv2 + a track-ID tracker) and streams one line per
 inference frame over USART1, which shows up on the host as `/dev/ttyACM*` at
 115200 8N1. This package reads that stream, debounces the noisy per-frame person
 count into stable occupancy events, and emits schema-v0 event envelopes to an
-event spine.
+event spine or appends them to a local JSONL sink file.
 
 Stdlib-only by default. No required third-party dependencies. `pyserial` is an
 optional extra; without it the serial reader degrades to reading the device as a
@@ -33,6 +33,7 @@ DET 1423 38944 0
 | `occbridge/events.py` | Schema-v0 envelope construction + validation + compact JSON. | none |
 | `occbridge/sources.py` | `LineSource` iterators: `SerialSource`, `FileReplaySource`, `IterableSource`. | serial / file |
 | `occbridge/spine_client.py` | Fail-open HTTP POST of envelopes via `urllib` (or dry-run print). | network |
+| `occbridge/sink.py` | Fail-open append of stored records to a JSONL file under `flock`. | file |
 | `occbridge/verify.py` | Bring-up GO/NO-GO: pure metric/verdict `analyze()` over frames + capture helper. | none (capture is impure) |
 | `occbridge/cli.py` + `__main__.py` | Wire it together; signal handling; stats summary; `verify` subcommand. | argv / signals |
 
@@ -57,6 +58,7 @@ defaults):
 |---|---|---|
 | `--node NAME` | `OCC_NODE` | `n6-occ-unknown` |
 | `--spine-url URL` | `OCC_SPINE_URL` | (unset → dry-run) |
+| `--sink PATH` | `OCC_SINK` | (unset; replaces the spine POST) |
 | `--device PATH` | — | `/dev/ttyACM0` |
 | `--replay FILE` | — | — |
 | `--heartbeat-s` | — | `60` |
@@ -76,6 +78,22 @@ Read the live serial device and POST to a spine:
 OCC_NODE=n6-occ-front-door OCC_SPINE_URL=http://spine.example/ingest \
   python -m occbridge --device /dev/ttyACM0
 ```
+
+Append events to a local JSONL sink instead of POSTing (`--sink` cannot be
+combined with `--spine-url` or `--dry-run`):
+
+```bash
+OCC_NODE=n6-occ-front-door \
+  python -m occbridge --device /dev/ttyACM0 --sink ~/.local/share/edge-kit/events.jsonl
+```
+
+Each line is one stored record: the envelope with `ts` rewritten to canonical
+RFC 3339 UTC, `Z`, millisecond precision (truncated, never rounded), plus
+`received_at` in the same form. Appends hold an exclusive `flock` on an
+`O_APPEND` file and issue one `write()` per line, so concurrent producers never
+interleave; if the file does not end in a newline (a crash mid-write), a newline
+is written first so the new record is not glued onto the fragment. A reader
+should skip any line that is not a complete JSON object.
 
 Install the optional native serial backend:
 
@@ -107,3 +125,7 @@ is a pure function over parsed frames, so it is fully unit-tested.
 ```bash
 python -m unittest discover -s tests
 ```
+
+`tests/test_sink.py` can also check the sink output against a reference writer
+(`emit.py` with `validate`/`normalise`/`read_sink`): set `EDGEKIT_EMIT_PY` to its
+path; without it those two tests skip and print why.

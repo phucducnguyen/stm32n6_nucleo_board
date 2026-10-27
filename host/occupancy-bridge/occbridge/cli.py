@@ -25,6 +25,7 @@ from .aggregator import (
 )
 from .protocol import parse_line
 from .sources import FileReplaySource, LineSource, SerialSource
+from .sink import JsonlSink
 from .spine_client import SpineClient
 from .verify import (
     DEFAULT_MIN_FPS,
@@ -39,6 +40,7 @@ log = logging.getLogger("occbridge.cli")
 DEFAULT_DEVICE = "/dev/ttyACM0"
 ENV_NODE = "OCC_NODE"
 ENV_SPINE_URL = "OCC_SPINE_URL"
+ENV_SINK = "OCC_SINK"
 
 __all__ = ["BridgeStats", "run_bridge", "build_parser", "build_verify_parser", "main"]
 
@@ -73,7 +75,7 @@ def _to_envelope(event: OccupancyEvent, node: str) -> dict:
 def run_bridge(
     lines: Iterable[str],
     aggregator: Aggregator,
-    client: SpineClient,
+    client: SpineClient | JsonlSink,
     node: str,
     *,
     should_stop=lambda: False,
@@ -133,6 +135,15 @@ def build_parser() -> argparse.ArgumentParser:
         "--spine-url",
         default=os.environ.get(ENV_SPINE_URL),
         help=f"event spine URL (env {ENV_SPINE_URL}); omit for dry-run",
+    )
+    p.add_argument(
+        "--sink",
+        metavar="PATH",
+        default=os.environ.get(ENV_SINK),
+        help=(
+            f"append each event as one JSONL record to PATH (env {ENV_SINK}); "
+            "replaces the spine POST"
+        ),
     )
     p.add_argument(
         "--dry-run",
@@ -294,7 +305,14 @@ def main(argv: list[str] | None = None) -> int:
         debounce_frames=args.debounce_frames,
         heartbeat_s=args.heartbeat_s,
     )
-    client = SpineClient(url=args.spine_url, dry_run=args.dry_run)
+    if args.sink and (args.spine_url or args.dry_run):
+        print("occbridge: --sink cannot be combined with --spine-url or --dry-run", file=sys.stderr)
+        return 2
+    if args.sink:
+        client: SpineClient | JsonlSink = JsonlSink(args.sink)
+        log.info("appending events to sink %s", client.path)
+    else:
+        client = SpineClient(url=args.spine_url, dry_run=args.dry_run)
     if client.dry_run:
         log.info("running in dry-run mode (events printed to stdout)")
 
