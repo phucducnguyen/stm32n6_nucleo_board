@@ -70,7 +70,7 @@ class PrivacyJudgeSynthetic(unittest.TestCase):
             "P1": "3400ed1d T HAL_PCD_Init",
             "P2": "340204c1 T UVCL_Init",
             "P3": "34193bb5 T eth_stm32_hal_init",
-            "P4": "3401cf35 T SCRL_Init",
+            "P4": "3401cf35 T HAL_LTDC_Init",
             "P5": "34000100 T f_write",
         }
         for cid, line in cases.items():
@@ -79,6 +79,14 @@ class PrivacyJudgeSynthetic(unittest.TestCase):
                 self.assertFalse(r[cid]["pass"])
                 others = [k for k, v in r.items() if k != cid and not v["pass"]]
                 self.assertEqual(others, [], f"{line} tripped {others}")
+
+    def test_spi_panel_backend_fails_pixel_out(self):
+        r = self.results(CLEAN_SYMS + "34010000 T ili9341_Init\n")
+        self.assertFalse(r["P4"]["pass"])
+
+    def test_screen_api_stubs_alone_pass(self):
+        r = self.results(CLEAN_SYMS + "3401cf35 T SCRL_Init\n3401d1c9 T SCRL_ReloadLayer\n")
+        self.assertTrue(all(x["pass"] for x in r.values()), r)
 
     def test_lowercase_uvc_sample_symbols_fail(self):
         r = self.results(CLEAN_SYMS + "34181145 t uvc_assign_desc\n")
@@ -268,6 +276,29 @@ class CountScore(unittest.TestCase):
         rc, out = self.run_score("[BOOT] x\n" + "\n".join(lines) + "\n", _truth(counts), "--anchor", anchor)
         self.assertEqual(rc, 0, out)
 
+    def test_change_plus_keepalive_stream_like_the_firmware(self):
+        # det_emit.c emits on a count change, else once per DET_EMIT_KEEPALIVE_MS (1 s).
+        lines, seq, last = [], 0, None
+        start = T0 - timedelta(seconds=30)
+        per_s = [c for c in TRUTH for _ in range(60)]
+        for sec, c in enumerate(per_s):
+            for sub in range(15):                  # 15 fps inference
+                t = start + timedelta(seconds=sec + sub / 15)
+                if c != last or sub == 0:
+                    boxes = " ".join(f"{j + 1}:500:500:100:300:0" for j in range(c))
+                    lines.append(f"{_iso(t)} DET {seq} {seq} {c}" + (f" {boxes}" if boxes else ""))
+                    seq += 1
+                    last = c
+        rc, out = self.run_score("\n".join(lines) + "\n", _truth(TRUTH))
+        self.assertEqual(rc, 0, out)
+
+    def test_silent_device_is_missing_not_zero(self):
+        # One line, then silence: held count must go stale, not read as an empty room.
+        frames = [(T0.timestamp() - 60, 0)]
+        truth = [(T0.timestamp(), 0)]
+        r = count_score.score(frames, truth)
+        self.assertEqual(r["minutes_scored"], 0)
+
     def test_raw_log_without_anchor_is_bad_input(self):
         rc, out = self.run_score("DET 1 10 0\n", _truth([0]))
         self.assertEqual(rc, 2, out)
@@ -281,6 +312,14 @@ class CountScore(unittest.TestCase):
         self.assertAlmostEqual(r["wape"], 1 / 8)
         self.assertAlmostEqual(r["bias"], -1 / 3)
         self.assertEqual(r["peak_offset_min"], 0.0)
+        self.assertEqual(r["peak_shortfall"], 0)
+
+    def test_device_peak_in_a_quiet_minute_misses(self):
+        dev = list(TRUTH)
+        dev[70] = 9                      # phantom crowd in the lull
+        rc, out = self.run_score(_det_log(dev), _truth(TRUTH))
+        self.assertEqual(rc, 1, out)
+        self.assertIn("MISS peak_shortfall", out)
 
 
 if __name__ == "__main__":

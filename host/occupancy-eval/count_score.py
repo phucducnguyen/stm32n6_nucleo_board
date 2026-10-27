@@ -18,15 +18,19 @@ DET log, either form:
                    (one board ts_ms paired with the wall clock at that moment;
                     ts_ms wraps at 2^32 and is unwrapped here)
 
-Per labelled minute mark M the device value is the median frame count over
-frames with wall time in [M - window, M + window] (default 10 s), rounded half
-up. A mark with fewer than --min-frames frames is MISSING (counts against
-coverage, never silently skipped).
+The firmware emits on a count change plus a 1 s keepalive, so the DET stream is
+a step function: each line holds until the next. Per labelled minute mark M the
+device value is the median of that held count sampled once a second over
+[M - window, M + window] (default 10 s), rounded half up. A sample more than
+--stale-s (default 3 s) after the last line is silent, not zero; a mark with
+half or more of its samples silent is MISSING (counts against coverage, never
+silently skipped).
 
 Metrics: coverage, MAE (people per minute), exact-count rate, within-one rate,
 mean signed bias, WAPE (sum |error| / sum truth), occupied-state accuracy
 (count >= 1 agreement; this drives the report's utilisation number), and the
-peak check (device peak minute within 5 minutes of the tally peak).
+peak check: the hand tally at the device's busiest minute is within one person
+of the tally's own peak (the report's "busiest time" is real).
 
 Target (docs/OCCUPANCY-PATH.md, "Accuracy target"): proposed until the first
 board session measures it.
@@ -52,7 +56,7 @@ TARGET = {
     "within1_min": 0.95,
     "wape_max": 0.15,
     "occupied_acc_min": 0.95,
-    "peak_offset_max_min": 5,
+    "peak_shortfall_max": 1,
 }
 MIN_DATASET = {"minutes": 60, "minutes_truth_ge2": 20}
 
@@ -124,15 +128,31 @@ def _median_round(vals: list[int]) -> int:
     return int(math.floor(m + 0.5))
 
 
-def score(frames, truth, window_s: float = 10.0, min_frames: int = 3) -> dict:
+def held_samples(frames, start: float, end: float, stale_s: float) -> list[int | None]:
+    """Sample the device count once a second over [start, end] as a step function.
+
+    The firmware emits on a count CHANGE plus a keepalive (DET_EMIT_KEEPALIVE_MS,
+    1 s), not every frame, so a DET line holds until the next one. A sample whose
+    last line is older than stale_s is None (the device was silent: not zero).
+    """
     import bisect
     times = [t for t, _ in frames]
+    out: list[int | None] = []
+    k = 0
+    while start + k <= end + 1e-9:
+        s = start + k
+        i = bisect.bisect_right(times, s) - 1
+        out.append(frames[i][1] if i >= 0 and s - times[i] <= stale_s else None)
+        k += 1
+    return out
+
+
+def score(frames, truth, window_s: float = 10.0, stale_s: float = 3.0) -> dict:
     pairs = []  # (mark, truth, device or None)
     for mark, tc in truth:
-        lo = bisect.bisect_left(times, mark - window_s)
-        hi = bisect.bisect_right(times, mark + window_s)
-        vals = [c for _, c in frames[lo:hi]]
-        dev = _median_round(vals) if len(vals) >= min_frames else None
+        samples = held_samples(frames, mark - window_s, mark + window_s, stale_s)
+        valid = [v for v in samples if v is not None]
+        dev = _median_round(valid) if len(valid) * 2 > len(samples) else None
         pairs.append((mark, tc, dev))
     scored = [(m, t, d) for m, t, d in pairs if d is not None]
     n, ns = len(pairs), len(scored)
@@ -155,6 +175,9 @@ def score(frames, truth, window_s: float = 10.0, min_frames: int = 3) -> dict:
         res["peak_truth"] = {"minute": datetime.fromtimestamp(tpk[0]).isoformat(timespec="minutes"), "count": tpk[1]}
         res["peak_device"] = {"minute": datetime.fromtimestamp(dpk[0]).isoformat(timespec="minutes"), "count": dpk[2]}
         res["peak_offset_min"] = abs(tpk[0] - dpk[0]) / 60.0
+        # Peaks repeat (every rush hits the same max), so gate on whether the
+        # device's busiest minute was truly busy, not on which tie it picked.
+        res["peak_shortfall"] = tpk[1] - dpk[1]
     return res
 
 
@@ -171,7 +194,7 @@ def verdict(res: dict) -> tuple[str, list[str]]:
     checks = [("mae", "mae_max", "<="), ("exact", "exact_min", ">="),
               ("within1", "within1_min", ">="), ("wape", "wape_max", "<="),
               ("occupied_acc", "occupied_acc_min", ">="),
-              ("peak_offset_min", "peak_offset_max_min", "<=")]
+              ("peak_shortfall", "peak_shortfall_max", "<=")]
     for key, tkey, op in checks:
         v, lim = res[key], TARGET[tkey]
         ok = v <= lim if op == "<=" else v >= lim
@@ -186,7 +209,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("truth_csv")
     ap.add_argument("--anchor", help="TS_MS=ISO wall time for a raw board log")
     ap.add_argument("--window-s", type=float, default=10.0)
-    ap.add_argument("--min-frames", type=int, default=3)
+    ap.add_argument("--stale-s", type=float, default=3.0)
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
     try:
@@ -206,14 +229,15 @@ def main(argv: list[str] | None = None) -> int:
     if not truth:
         print("BAD-INPUT: empty ground truth", file=sys.stderr)
         return 2
-    res = score(frames, truth, a.window_s, a.min_frames)
+    res = score(frames, truth, a.window_s, a.stale_s)
     v, misses = verdict(res)
     res["verdict"], res["misses"] = v, misses
     if a.json:
         print(json.dumps(res, indent=2, default=str))
     else:
         for k in ("minutes_labelled", "minutes_scored", "coverage", "mae", "exact",
-                  "within1", "bias", "wape", "occupied_acc", "peak_offset_min"):
+                  "within1", "bias", "wape", "occupied_acc", "peak_offset_min",
+                  "peak_shortfall"):
             if k in res:
                 v_ = res[k]
                 print(f"  {k:18s} {v_:.3f}" if isinstance(v_, float) else f"  {k:18s} {v_}")

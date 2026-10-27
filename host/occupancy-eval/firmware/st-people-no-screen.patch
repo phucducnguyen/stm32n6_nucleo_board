@@ -1,0 +1,49 @@
+diff --git a/Lib/screenl/Src/scrl_none.c b/Lib/screenl/Src/scrl_none.c
+new file mode 100644
+index 0000000..411b2cc
+--- /dev/null
++++ b/Lib/screenl/Src/scrl_none.c
+@@ -0,0 +1,30 @@
++/* scrl_none.c: screen-library backend that drives no screen.
++ * Occupancy build: the overlay is still rendered into RAM by the app, but no
++ * backend moves a pixel off the MCU (no UVC, no LTDC, no SPI panel). */
++#include <stddef.h>
++#include "scrl.h"
++
++int SCRL_Init(SCRL_LayerConfig *layers_config[SCRL_LAYER_NB], SCRL_ScreenConfig *screen_config)
++{
++  (void)layers_config;
++  (void)screen_config;
++  return 0;
++}
++
++int SCRL_SetAddress_NoReload(void *address, SCRL_Layer layer)
++{
++  (void)address;
++  (void)layer;
++  return 0;
++}
++
++int SCRL_ReloadLayer(SCRL_Layer layer)
++{
++  (void)layer;
++  return 0;
++}
++
++int SRCL_Update(void)
++{
++  return 0;
++}
+diff --git a/Lib/screenl/scr_lib.mk b/Lib/screenl/scr_lib.mk
+index 905832e..8630cae 100644
+--- a/Lib/screenl/scr_lib.mk
++++ b/Lib/screenl/scr_lib.mk
+@@ -15,6 +15,8 @@ C_SOURCES_SCR_LIB += $(SCR_LIB_REL_DIR)Src/scrl_spi.c
+ C_SOURCES_SCR_LIB += $(SCR_LIB_REL_DIR)Src/scrl_common.c
+ C_SOURCES_SCR_LIB += $(SCR_LIB_REL_DIR)ili9341/ili9341_reg.c
+ C_SOURCES_SCR_LIB += $(SCR_LIB_REL_DIR)ili9341/ili9341.c
++else ifeq ($(SCR_LIB_SCREEN_ITF), NONE)
++C_SOURCES_SCR_LIB += $(SCR_LIB_REL_DIR)Src/scrl_none.c
+ else
+ $(error $(SCR_LIB_SCREEN_ITF) is not supported)
+ endif

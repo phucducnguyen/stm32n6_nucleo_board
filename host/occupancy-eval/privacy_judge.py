@@ -16,7 +16,10 @@ aliases such as `ETH1_IRQHandler` in the vector table never trip a check):
   P3 no-network       no network or Ethernet transmit path
                       (net_if_*, net_context_*, ethernet_send, eth_stm32_*, HAL_ETH_Transmit*)
   P4 no-pixel-out     no display, JPEG encoder or pixel-pushing screen driver
-                      (HAL_LTDC_*, SCRL_*, ili9341*, HAL_JPEG_*, display_write)
+                      (HAL_LTDC_*, ili9341*, HAL_JPEG_*, display_write). The ST
+                      screen API (SCRL_*) itself is allowed: with the no-screen
+                      backend it is a set of stubs, and the UVC/LTDC/SPI backends
+                      behind it are caught by P1/P2/P4 by their own symbols.
   P5 no-storage       no filesystem or SD card write path (f_write, fs_write, HAL_SD_*)
   P6 det-emitter      POSITIVE check: DetEmit_Frame is linked, so an unrelated
                       clean image (hello world) cannot pass as the occupancy build
@@ -63,7 +66,7 @@ SYMBOL_CHECKS: list[tuple[str, str, re.Pattern[str]]] = [
     ("P3", "no-network", re.compile(
         r"^(net_if_|net_context_|net_send|ethernet_send|eth_stm32_|HAL_ETH_Transmit)")),
     ("P4", "no-pixel-out", re.compile(
-        r"^(HAL_LTDC_|SCRL_|ili9341|ILI9341|HAL_JPEG_|display_write)")),
+        r"^(HAL_LTDC_|ili9341|ILI9341|HAL_JPEG_|display_write)")),
     ("P5", "no-storage", re.compile(r"^(f_write|fs_write|HAL_SD_|disk_access_write)")),
 ]
 
