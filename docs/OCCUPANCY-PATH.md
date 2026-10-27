@@ -48,7 +48,7 @@ callback, so the stubs should not stall the pipeline; that is unverified until s
 | # | Stage | Gate (the check that says done) | Effort | Reuses | Needs the board |
 |---|---|---|---|---|---|
 | 0 | Privacy judges + count scorer + no-screen backend | `privacy_judge.py` FAILS `build/uvc` and the current st-people ELF, PASSES the no-screen ELF; 32 unit tests OK; Gavel prover PROVEN with 2 known-bad cases | done 2026-10-26 (*tested*) | occbridge parser, the st-people fork, ARM toolchain | no |
-| 1 | Make the no-screen build the default occupancy image | Patch moved into `patches/` (listed in `patches.yml`), `scripts/build-people-detect.sh` passes `SCR_LIB_SCREEN_ITF=NONE`, then runs `privacy_judge.py --elf ../st-people/build/Project.elf` and refuses to sign on exit 1; judge entry added to `scripts/judges.yaml` | 0.5 day | everything in stage 0; `build-people-detect.sh` | no |
+| 1 | Make the no-screen build the default occupancy image | Patch copied to `patches/st-people-no-screen.patch` (not in `patches.yml`, which is west's Zephyr list), `scripts/build-people-detect.sh` applies it, builds with `SCR_LIB_SCREEN_ITF=NONE`, then runs `privacy_judge.py --elf ../st-people/build/Project.elf` and refuses to sign on exit 1 (`--webcam` builds the UVC aiming image into `build-webcam/`); judge `host_occupancy_eval` in `scripts/judges.yaml` | done 2026-10-26 (*tested* on a copy of st-people: sealed PASS, `--webcam` FAIL P2, a forced UVC default REFUSED before signing; not signed) | everything in stage 0; `build-people-detect.sh` | no |
 | 2 | Aim, then seal, then first light | (a) aim the camera with the webcam image (`build/camera-app`, the install tool); (b) flash the sealed image; (c) on the board: `lsusb` shows only the ST-Link `0483:3754` (no UVC device on CN8), 10 min of console captured host-stamped, `uart_log_judge.py` PASS, `python -m occbridge --device /dev/ttyACM0 --dry-run` emits events, a 5-walk in/out test moves the count 0 to 1 and back each time, SWD connect refused in run mode | 0.5 day | `flash-people-detect.sh`, BOOT jumper recipe (`docs/N6-FACTS.md`), occbridge | **yes** (jumpers, flashing, walking) |
 | 3 | First accuracy measurement | `count_score.py capture.log tally.csv` over >= 60 labelled minutes in >= 3 windows with >= 20 minutes at 2+ people: MEET, or a measured MISS that names the failing metric | 1 day (about 1.5 h of a person tallying) | the scorer, a phone timer | **yes** (plus one human) |
 | 4 | Only if stage 3 misses: cheapest knobs, then the model | Re-run stage 3 on fresh windows: MEET | knobs 0.5 day; model swap 1 to 2 days | ST model zoo `st_yolo_x_nano` (SLA0044) at 256 or 320, already sized in the venture step-1 research | yes |
@@ -161,8 +161,8 @@ python3 -B count_score.py capture.log tally.csv [--anchor TS_MS=ISO]
 
 ## Needs the owner or the board
 
-1. Stage 1 edits `patches/`, `patches/patches.yml`, `scripts/build-people-detect.sh` and
-   `scripts/judges.yaml` (another work stream owns `scripts/` today).
+1. Stage 1 is built and tested, not signed: run `scripts/build-people-detect.sh` once on the
+   real `../st-people` (it applies the no-screen patch there and signs `build/Project_sign.bin`).
 2. Stage 2 jumper moves and flashing (`scripts/flash-people-detect.sh`), and the walk test.
 3. Stage 3: one person for about 1.5 hours of tallying across three windows.
 4. Later, not on this path: permanently closing the debug port (irreversible).

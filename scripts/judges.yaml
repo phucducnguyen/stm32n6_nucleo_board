@@ -247,3 +247,23 @@ judges:
         successfully", then a full west build from the fresh tree and the verify-only preflight) in
         about 24 s; no_patch_step and apply_command_noop both rejected by the fix-presence check
         before any build (about 5 s each). zephyr/ working tree unchanged.
+
+  - id: host_occupancy_eval
+    claim: >-
+      The occupancy privacy judges fail every egress family (USB, UVC, network, pixel-out, storage,
+      Kconfig, UART blob/binary/noise) and the count scorer computes per-minute MAE, exact, WAPE,
+      coverage and peak as specified; the Zephyr webcam build (build/uvc) fails the ELF judge.
+      Limit: the st-people people-detect ELF test is skipped in the export (no ../st-people);
+      scripts/build-people-detect.sh runs the same judge on that ELF before it signs.
+    run: cd host/occupancy-eval && python3 -B -m unittest discover -s tests -v
+    covers: ["host:occupancy-eval"]
+    pass_match:
+      - "^OK"
+      - "test_webcam_build_fails .* ok$"
+    known_bad:
+      - name: uvc_check_off
+        cmd: "sed -i 's/(\\^UVCL_|\\^uvc_|_uvc_|\\^update_uvc)/(^NEVERMATCH)/' host/occupancy-eval/privacy_judge.py"
+        match: "FAIL: test_webcam_build_fails"
+      - name: silent_device_reads_as_empty
+        cmd: "sed -i 's/dev = _median_round(valid) if len(valid) \\* 2 > len(samples) else None/dev = _median_round(valid) if valid else 0/' host/occupancy-eval/count_score.py"
+        match: "FAIL: test_silent_device_is_missing_not_zero"
