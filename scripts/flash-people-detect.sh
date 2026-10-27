@@ -85,5 +85,5 @@ echo "flash: app     $SIGNED @ $APP_ADDR"; prog "$SIGNED" "$APP_ADDR"
 
 echo
 echo "flash: OK. Now set BOOT0+BOOT1 -> position 1 (printed) and power-cycle to RUN."
-echo "Then: board enumerates as UVC; read detections on the newest /dev/ttyACM*:"
+echo "Then: board boots; the sealed image prints DET lines only (the --webcam image enumerates as UVC); read detections on the newest /dev/ttyACM*:"
 echo "      python -m occbridge --device /dev/ttyACM0 --dry-run   (from host/occupancy-bridge)"
