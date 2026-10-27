@@ -82,7 +82,7 @@ camera ─► ON-DEVICE inference (person-detect / count on Neural-ART NPU)
                 (people count, occupancy, queue length, dwell, zone engagement)
 ```
 
-- **Core invariant: the camera image NEVER leaves the device — only anonymous metadata is emitted.** This is both the privacy guarantee and the wedge vs. cloud cameras, so the architecture favors the inference-then-emit-event path.
+- **Core invariant (goal): the camera image NEVER leaves the device — only anonymous metadata is emitted.** It is not yet true of any built image: the current people-detect build still links ST's UVC video stream (`host/occupancy-eval/privacy_judge.py` FAIL P2: `UVCL_Init`, `UVCL_ShowFrame`). Gate: the no-screen build (`host/occupancy-eval/firmware/st-people-no-screen.patch`) passes that judge; the sealed image is not yet signed or flashed (`docs/OCCUPANCY-PATH.md` stages 1-2). This is both the privacy guarantee and the wedge vs. cloud cameras, so the architecture favors the inference-then-emit-event path.
 - The USB-UVC frame export above is **plumbing / learning**, not the product path: streaming raw frames off the board would violate the images-never-leave invariant. It de-risks the capture pipeline and feeds on-device-inference work; it isn't what ships.
 - Full product thesis lives in the Edge Kit planning vault (`PRODUCT-DIRECTION.md`).
 

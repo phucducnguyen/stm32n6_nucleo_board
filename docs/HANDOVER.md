@@ -5,8 +5,8 @@
 > **▶ PRODUCT NORTH-STAR (chosen 2026-06-25).** This firmware now has a sellable target:
 > a **vision-grade local occupancy sensor** — the N6 watches a space (room / queue / booth
 > / counter), runs inference **on-device**, and emits **anonymous usage events** (people
-> count, seat/desk occupancy, queue length, dwell, zone engagement). **The camera image
-> never leaves the device** — that local-only promise is both the privacy story and the
+> count, seat/desk occupancy, queue length, dwell, zone engagement). **Goal: the camera image
+> never leaves the device**; not yet true of any built image: the current people-detect build still links ST's UVC video stream (`host/occupancy-eval/privacy_judge.py` FAIL P2: `UVCL_Init`, `UVCL_ShowFrame`). Gate: the no-screen build (`host/occupancy-eval/firmware/st-people-no-screen.patch`) passes that judge; the sealed image is not yet signed or flashed (`docs/OCCUPANCY-PATH.md` stages 1-2). That local-only promise is both the privacy story and the
 > wedge vs cloud cameras. (We deliberately do NOT claim "more private than thermal":
 > camera-free thermal sensors own a hardware-level privacy guarantee; our wedge is *richer
 > spatial detail than thermal/blob, with local-only processing*, aimed at granularity-

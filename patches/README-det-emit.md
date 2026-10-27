@@ -23,4 +23,6 @@ mainline ARM GNU GCC rejects it).
 **Toggle:** `APP_DET_EMIT` in `det_emit.h` (default `1`); set `0` → emitter and
 call site compile to a no-op.
 
+**Privacy:** this build is not the product image. It still links ST's UVC video stream, so the camera image does leave the board over USB; "the image never leaves the device" is not yet true of any built image: the current people-detect build still links ST's UVC video stream (`host/occupancy-eval/privacy_judge.py` FAIL P2: `UVCL_Init`, `UVCL_ShowFrame`). Gate: the no-screen build (`host/occupancy-eval/firmware/st-people-no-screen.patch`) passes that judge; the sealed image is not yet signed or flashed (`docs/OCCUPANCY-PATH.md` stages 1-2).
+
 **Status: built and signed 2026-06-25 (`scripts/build-people-detect.sh`, ARM GNU 13.3; `DetEmit_Frame` linked), not yet flashed or verified on the board.**
