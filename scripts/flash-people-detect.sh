@@ -8,12 +8,52 @@
 # After flashing: BOOT0+BOOT1 -> position 1 (printed), power-cycle to RUN.
 #
 # Build first with scripts/build-people-detect.sh (produces the signed bin).
+#
+#   scripts/flash-people-detect.sh            sealed image build/Project_sign.bin
+#   scripts/flash-people-detect.sh --webcam   AIMING image build-webcam/Project_webcam_sign.bin
+#                                             (streams camera video over USB)
+#
+# Refuses unless <signed>.seal (written by the build) exists and its sha256 matches
+# the image about to be flashed; the sealed image also needs judge=PASS.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PEOPLE_DIR="${PEOPLE_DIR:-$(cd "$HERE/../../st-people" && pwd)}"
 BOARD="${BOARD:-NUCLEO-N657X0-Q}"
 APP_ADDR="${APP_ADDR:-0x70100000}"
+
+WEBCAM=0
+for arg in "$@"; do
+	case "$arg" in
+	--webcam) WEBCAM=1 ;;
+	-h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+	*) echo "flash: unknown argument '$arg' (use --webcam)" >&2; exit 2 ;;
+	esac
+done
+if [ "$WEBCAM" = 1 ]; then
+	SIGNED="$PEOPLE_DIR/build-webcam/Project_webcam_sign.bin"
+	echo "flash: *** WEBCAM AIMING IMAGE: streams the camera video over USB. ***"
+else
+	SIGNED="$PEOPLE_DIR/build/Project_sign.bin"
+fi
+
+# --- seal check: before any tool runs, so a refused image never reaches the board --
+refuse() { echo "flash: REFUSED: $*" >&2; exit 1; }
+SEAL="$SIGNED.seal"
+[ -f "$SIGNED" ] || refuse "missing $SIGNED (build first?)"
+case "$(readlink -f "$SIGNED")" in
+*/build-webcam/*) [ "$WEBCAM" = 1 ] || refuse "$SIGNED resolves into build-webcam/ (pass --webcam to flash the aiming image)" ;;
+esac
+[ -f "$SEAL" ] || refuse "no seal $SEAL (rebuild with scripts/build-people-detect.sh, signing on)"
+seal_get() { sed -n "s/^$1=//p" "$SEAL" | head -1; }
+WANT_SHA="$(seal_get signed_sha256)"
+HAVE_SHA="$(sha256sum "$SIGNED" | cut -d' ' -f1)"
+[ -n "$WANT_SHA" ] && [ "$WANT_SHA" = "$HAVE_SHA" ] || refuse "$SIGNED sha256 $HAVE_SHA does not match its seal (${WANT_SHA:-none})"
+if [ "$WEBCAM" = 0 ]; then
+	[ "$(seal_get judge)" = PASS ] || refuse "seal judge=$(seal_get judge), not PASS"
+	[ "$(seal_get screen_itf)" = NONE ] || refuse "seal screen_itf=$(seal_get screen_itf), not NONE"
+fi
+echo "flash: seal OK ($SEAL, judge=$(seal_get judge), sha256 $HAVE_SHA)"
 
 CLI="${CLI:-$(command -v STM32_Programmer_CLI || true)}"
 [ -n "$CLI" ] || CLI="$(ls "$HOME"/STMicroelectronics/STM32CubeProgrammer/bin/STM32_Programmer_CLI 2>/dev/null | head -1 || true)"
@@ -24,8 +64,7 @@ NUEL="${NUEL:-$(ls "$(dirname "$CLI")"/ExternalLoader/MX25UM51245G_STM32N6570-NU
 
 FSBL="$PEOPLE_DIR/FSBL/ai_fsbl.hex"
 NETWORK="$PEOPLE_DIR/Model/$BOARD/network_data.hex"
-SIGNED="$PEOPLE_DIR/build/Project_sign.bin"
-for f in "$FSBL" "$NETWORK" "$SIGNED"; do
+for f in "$FSBL" "$NETWORK"; do
 	[ -f "$f" ] || { echo "flash: missing $f (build first?)" >&2; exit 1; }
 done
 

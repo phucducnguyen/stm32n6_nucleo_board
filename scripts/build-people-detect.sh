@@ -15,6 +15,11 @@
 # The webcam image builds into its own dir so flash-people-detect.sh (which reads
 # build/Project_sign.bin) can never pick it up by accident.
 #
+# Seal: the signed image, Project.bin and the seal file are deleted before make,
+# so a refused or failed build leaves nothing at the flash path. After signing,
+# <signed>.seal records the sha256 of the signed image, Project.bin and the judged
+# ELF plus the judge verdict; flash-people-detect.sh flashes only a matching seal.
+#
 # Pure host build — touches NO hardware. Flashing is a separate step (needs
 # dev-boot jumper): scripts/flash-people-detect.sh
 #
@@ -101,16 +106,22 @@ if [ "$(cat "$STAMP" 2>/dev/null || true)" != "$SCREEN_ITF" ]; then
 	echo "build: $BUILD_DIR/ not last built with SCR_LIB_SCREEN_ITF=$SCREEN_ITF: full rebuild"
 fi
 rm -f "$STAMP"
+ELF="$PEOPLE_DIR/$BUILD_DIR/Project.elf"
+BIN="$PEOPLE_DIR/$BUILD_DIR/Project.bin"
+SIGNED="$PEOPLE_DIR/$BUILD_DIR/$SIGNED_NAME"
+SEAL="$SIGNED.seal"
+# A stale signed image (e.g. an old UVC build) must not survive a refused build.
+rm -f "$SIGNED" "$SEAL" "$BIN"
 echo "build: make BOARD=$BOARD SCR_LIB_SCREEN_ITF=$SCREEN_ITF BUILD_DIR=$BUILD_DIR in $PEOPLE_DIR"
 make -C "$PEOPLE_DIR" "${MAKE_B[@]}" BOARD="$BOARD" SCR_LIB_SCREEN_ITF="$SCREEN_ITF" BUILD_DIR="$BUILD_DIR" -j"$(nproc)"
 echo "$SCREEN_ITF" > "$STAMP"
 
-ELF="$PEOPLE_DIR/$BUILD_DIR/Project.elf"
-BIN="$PEOPLE_DIR/$BUILD_DIR/Project.bin"
 [ -f "$BIN" ] && [ -f "$ELF" ] || { echo "build: expected $ELF and $BIN, not produced" >&2; exit 1; }
 
 # --- privacy judge on what was linked ------------------------------------------
 echo "build: privacy judge on $ELF"
+ELF_SHA="$(sha256sum "$ELF" | cut -d' ' -f1)"
+BIN_SHA="$(sha256sum "$BIN" | cut -d' ' -f1)"
 set +e
 python3 -B "$REPO/host/occupancy-eval/privacy_judge.py" --elf "$ELF"
 JUDGE_RC=$?
@@ -129,9 +140,24 @@ if [ "$DO_SIGN" = 0 ]; then
 fi
 
 # --- sign (N6 only boots signed images) -------------------------------------
-SIGNED="$PEOPLE_DIR/$BUILD_DIR/$SIGNED_NAME"
 echo "build: signing -> $SIGNED"
-"$SIGN" -bin "$BIN" -nk -t ssbl -hv 2.3 -o "$SIGNED"
+# When -o already exists the signing tool loops on a "replace? (y/n)" prompt at
+# 100% CPU, even with stdin at EOF: delete the output first, and bound it anyway.
+rm -f "$SIGNED"
+timeout "${SIGN_TIMEOUT:-120}" "$SIGN" -bin "$BIN" -nk -t ssbl -hv 2.3 -o "$SIGNED" </dev/null
+[ -s "$SIGNED" ] || { echo "build: signing tool produced no $SIGNED" >&2; exit 1; }
+# The judged ELF and the signed bin must still be the ones hashed above.
+[ "$(sha256sum "$ELF" | cut -d' ' -f1)" = "$ELF_SHA" ] && [ "$(sha256sum "$BIN" | cut -d' ' -f1)" = "$BIN_SHA" ] || {
+	rm -f "$SIGNED"; echo "build: ELF or Project.bin changed during the build; not sealed" >&2; exit 1; }
+if [ "$JUDGE_RC" = 0 ]; then VERDICT=PASS; else VERDICT=FAIL; fi
+{
+	echo "signed_sha256=$(sha256sum "$SIGNED" | cut -d' ' -f1)"
+	echo "bin_sha256=$BIN_SHA"
+	echo "elf_sha256=$ELF_SHA"
+	echo "judge=$VERDICT"
+	echo "screen_itf=$SCREEN_ITF"
+} > "$SEAL"
+echo "build: seal $SEAL (judge=$VERDICT)"
 
 echo
 echo "build: OK"
