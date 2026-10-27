@@ -134,6 +134,16 @@ judges:
           sed -i 's/if (attempt >= 10) {/if (attempt >= 0) {/' "$f"
           sed -i "s/sha256sum: .*/sha256sum: $(sha256sum "$f" | cut -d' ' -f1)/" patches/patches.yml
         match: "FAIL: patched copy lacks the IMX335 cold-boot fix \\(drivers/video/imx335.c: no 'if \\(attempt >= 10\\) \\{'\\)"
+      - name: hollow_patch_fix_in_comments
+        # every fix line kept only inside a comment, the settle back to K_USEC(601) (red team, 2026-10-26)
+        cmd: |-
+          f=patches/zephyr/imx335-cold-boot-init.patch
+          sed -i -E '/^\+/{s#k_sleep\(K_MSEC\(5\)\);#k_sleep(K_USEC(601)); /* k_sleep(K_MSEC(5)); */#;s#(for \(int attempt = 0; ; attempt\+\+\) \{|if \(ret == 0\) \{|if \(attempt >= 10\) \{|k_msleep\(2\);)#/* \1 */#}' "$f"
+          sed -i "s/sha256sum: .*/sha256sum: $(sha256sum "$f" | cut -d' ' -f1)/" patches/patches.yml
+        match: "FAIL: patched copy lacks the IMX335 cold-boot fix \\(drivers/video/imx335.c: no 'k_sleep\\(K_MSEC\\(5\\)\\);'\\)"
+      - name: base_rev_not_the_pin
+        cmd: "sed -i 's/^      base-rev: .*/      base-rev: 0000000000000000000000000000000000000000/' patches/patches.yml"
+        match: "FAIL: zephyr/imx335-cold-boot-init.patch: custom.base-rev 000000000000 is not the Zephyr pin 1f6485eca254"
       - name: apply_command_noop
         # west patch apply would run `true` and apply nothing (quoted: a bare `true` is a YAML bool west refuses)
         cmd: "sed -i 's/^    apply-command: git apply$/    apply-command: \"true\"/' patches/patches.yml"

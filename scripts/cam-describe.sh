@@ -6,8 +6,10 @@
 # Required env (no defaults: pick the server and model on purpose):
 #   OLLAMA_URL    e.g. http://<ollama-host>:11434
 #   OLLAMA_MODEL  a vision model that server has pulled
-# Optional: CAM_DESCRIBE_TIMEOUT (seconds, default 120), CAM_STREAM_PORT
-# (default 8091, where cam-stream.sh serves /snapshot).
+# Optional: CAM_DESCRIBE_TIMEOUT (whole seconds, default 120: a deadline for the
+# model call, not a per-read timeout), CAM_STREAM_PORT (default 8091, where
+# cam-stream.sh serves /snapshot; start cam-stream.sh with the same variable,
+# not a port argument, so both agree).
 #
 # Gets the frame from ustreamer's /snapshot endpoint if the stream is up
 # (no interruption); falls back to grabbing /dev/video0 directly if not.
@@ -20,6 +22,14 @@ if [[ -z "${OLLAMA_URL:-}" || -z "${OLLAMA_MODEL:-}" ]]; then
 fi
 TIMEOUT="${CAM_DESCRIBE_TIMEOUT:-120}"
 SNAP_PORT="${CAM_STREAM_PORT:-8091}"
+if ! [[ "$TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
+	echo "cam-describe: CAM_DESCRIBE_TIMEOUT must be a whole number of seconds above 0 (got '$TIMEOUT')" >&2
+	exit 2
+fi
+if ! [[ "$SNAP_PORT" =~ ^[1-9][0-9]*$ ]] || (( SNAP_PORT > 65535 )); then
+	echo "cam-describe: CAM_STREAM_PORT must be a port number (got '$SNAP_PORT')" >&2
+	exit 2
+fi
 PROMPT="${1:-Describe what you see in this image in 2-3 sentences. It comes from a camera with a green color cast and soft focus; ignore those artifacts.}"
 
 # Fail fast and clearly before touching the camera.
@@ -31,12 +41,21 @@ fi
 FRAME=$(mktemp --suffix=.jpg)
 trap 'rm -f "$FRAME"' EXIT
 
-if ! curl -sf -m 10 -o "$FRAME" "http://127.0.0.1:$SNAP_PORT/snapshot"; then
-	ffmpeg -hide_banner -loglevel error -f v4l2 -video_size 640x480 \
-		-i /dev/video0 -frames:v 1 -update 1 -y "$FRAME"
+# Loopback: never through an http_proxy from the environment.
+if ! curl -sf -m 10 --noproxy '*' -o "$FRAME" "http://127.0.0.1:$SNAP_PORT/snapshot"; then
+	# A camera that never delivers a frame would block ffmpeg forever.
+	if ! timeout 15 ffmpeg -hide_banner -loglevel error -f v4l2 -video_size 640x480 \
+		-i /dev/video0 -frames:v 1 -update 1 -y "$FRAME"; then
+		echo "cam-describe: no frame from /dev/video0 within 15 s (and no stream on :$SNAP_PORT)" >&2
+		exit 1
+	fi
 fi
 
-PROMPT="$PROMPT" FRAME="$FRAME" TIMEOUT="$TIMEOUT" OLLAMA_URL="$OLLAMA_URL" OLLAMA_MODEL="$OLLAMA_MODEL" python3 - <<'PY'
+# urlopen's timeout is per socket read, so a server that trickles bytes would never time out:
+# `timeout` is the deadline (124 = it fired).
+rc=0
+PROMPT="$PROMPT" FRAME="$FRAME" TIMEOUT="$TIMEOUT" OLLAMA_URL="$OLLAMA_URL" OLLAMA_MODEL="$OLLAMA_MODEL" \
+	timeout "$TIMEOUT" python3 - <<'PY' || rc=$?
 import base64, json, os, socket, sys, urllib.error, urllib.request
 url = os.environ["OLLAMA_URL"].rstrip("/") + "/api/generate"
 img = base64.b64encode(open(os.environ["FRAME"], "rb").read()).decode()
@@ -47,7 +66,17 @@ req = urllib.request.Request(url, data=json.dumps(payload).encode(),
                              headers={"Content-Type": "application/json"})
 try:
     with urllib.request.urlopen(req, timeout=float(os.environ["TIMEOUT"])) as r:
-        print(json.load(r).get("response"))
+        reply = json.load(r)
+    text = reply.get("response") if isinstance(reply, dict) else None
+    if not isinstance(text, str) or not text.strip():
+        print("cam-describe: %s answered without a \"response\" (%s)"
+              % (os.environ["OLLAMA_URL"], (reply.get("error") if isinstance(reply, dict) else None) or "no text"),
+              file=sys.stderr)
+        sys.exit(1)
+    print(text)
+except ValueError as e:
+    print("cam-describe: %s answered with something that is not JSON: %s" % (os.environ["OLLAMA_URL"], e), file=sys.stderr)
+    sys.exit(1)
 except urllib.error.HTTPError as e:
     print("cam-describe: %s answered HTTP %d (model %s pulled there?)"
           % (os.environ["OLLAMA_URL"], e.code, os.environ["OLLAMA_MODEL"]), file=sys.stderr)
@@ -56,3 +85,8 @@ except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError) as
     print("cam-describe: Ollama unavailable at %s: %s" % (os.environ["OLLAMA_URL"], e), file=sys.stderr)
     sys.exit(3)
 PY
+if (( rc == 124 )); then
+	echo "cam-describe: no full answer from $OLLAMA_URL within ${TIMEOUT} s" >&2
+	exit 3
+fi
+exit "$rc"

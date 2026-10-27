@@ -18,14 +18,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 REPO=$PWD
 PATCH="$REPO/patches/zephyr/imx335-cold-boot-init.patch"
-FIX_FILE=drivers/video/imx335.c
-# Behaviour lines of the fix (same as check-zephyr-patches.sh).
-FIX_LINES=(
-	'k_sleep(K_MSEC(5));'
-	'for (int attempt = 0; ; attempt++) {'
-	'if (attempt >= 10) {'
-	'k_msleep(2);'
-)
+# FIX_FILE, FIX_LINES and imx335_fix_problems, shared with check-zephyr-patches.sh.
+. "$REPO/scripts/imx335-fix.sh"
 BOARD=nucleo_n657x0_q
 
 src=$(realpath zephyr)
@@ -60,10 +54,13 @@ west patch -b "$REPO/patches" -l "$REPO/patches/patches.yml" apply
 if ! git -C zephyr apply --reverse --check "$PATCH" 2>/dev/null; then
 	echo "FAIL: fresh zephyr lacks imx335-cold-boot-init.patch after west patch apply"; exit 1
 fi
-for line in "${FIX_LINES[@]}"; do
-	grep -qF -- "$line" "zephyr/$FIX_FILE" || {
-		echo "FAIL: fresh zephyr lacks the IMX335 cold-boot fix ($FIX_FILE: no '$line')"; exit 1; }
-done
+problems=$(imx335_fix_problems "zephyr/$FIX_FILE")
+if [[ -n "$problems" ]]; then
+	while IFS= read -r problem; do
+		echo "FAIL: fresh zephyr lacks the IMX335 cold-boot fix ($FIX_FILE: $problem)"
+	done <<<"$problems"
+	exit 1
+fi
 echo "PASS: west patch apply put the IMX335 cold-boot fix into fresh zephyr ${rev:0:12}"
 
 west build -p -b "$BOARD" "$REPO/apps/camera-app" -d "$ws/build"

@@ -15,20 +15,13 @@ cd "$(dirname "$0")/.."
 YML=patches/patches.yml
 BASE=patches
 ZEPHYR="${ZEPHYR_DIR:-zephyr}"
-FIX_FILE=drivers/video/imx335.c
-# Behaviour lines of the fix, not its comments: the 5 ms T4 settle and the
-# bounded retry of the first register batch.
-FIX_LINES=(
-	'k_sleep(K_MSEC(5));'
-	'for (int attempt = 0; ; attempt++) {'
-	'if (ret == 0) {'
-	'if (attempt >= 10) {'
-	'k_msleep(2);'
-)
-FIX_GONE='k_sleep(K_USEC(600));'
+# FIX_FILE, FIX_LINES and imx335_fix_problems (code only, comments stripped).
+. scripts/imx335-fix.sh
 
 [[ -f "$YML" ]] || { echo "FAIL: $YML missing"; exit 1; }
 git -C "$ZEPHYR" rev-parse --git-dir >/dev/null 2>&1 || { echo "FAIL: no Zephyr git repo at $ZEPHYR"; exit 1; }
+# Zephyr is the manifest repo, so its HEAD commit is the pin (AGENTS.md: v4.4.1).
+pin=$(git -C "$ZEPHYR" rev-parse HEAD)
 
 # One line per patch: path|sha256|base-rev|module|apply-command (our own flat
 # layout of the file). apply-command absent = the schema default, git apply;
@@ -69,6 +62,9 @@ while IFS='|' read -r path sha rev module apply; do
 	if [[ "$actual" != "$sha" ]]; then
 		echo "FAIL: $path: sha256 mismatch (west patch apply would refuse it)"; fail=1; continue
 	fi
+	if [[ "$rev" != "$pin" ]]; then
+		echo "FAIL: $path: custom.base-rev ${rev:0:12} is not the Zephyr pin ${pin:0:12}"; fail=1; continue
+	fi
 	if ! git -C "$ZEPHYR" cat-file -e "$rev^{commit}" 2>/dev/null; then
 		echo "FAIL: $path: base-rev $rev not in $ZEPHYR"; fail=1; continue
 	fi
@@ -91,14 +87,10 @@ if [[ -z "$fix_rev" ]]; then
 else
 	fixed="$tmp/$fix_rev/$FIX_FILE"
 	missing=0
-	for line in "${FIX_LINES[@]}"; do
-		if ! grep -qF -- "$line" "$fixed"; then
-			echo "FAIL: patched copy lacks the IMX335 cold-boot fix ($FIX_FILE: no '$line')"; missing=1
-		fi
-	done
-	if grep -qF -- "$FIX_GONE" "$fixed"; then
-		echo "FAIL: patched copy lacks the IMX335 cold-boot fix ($FIX_FILE: still has '$FIX_GONE')"; missing=1
-	fi
+	while IFS= read -r problem; do
+		[[ -n "$problem" ]] || continue
+		echo "FAIL: patched copy lacks the IMX335 cold-boot fix ($FIX_FILE: $problem)"; missing=1
+	done < <(imx335_fix_problems "$fixed")
 	if (( missing )); then
 		fail=1
 	else
