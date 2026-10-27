@@ -224,6 +224,13 @@ judges:
         # patches.yml lists no patch, so the patch step applies nothing: the fresh tree is stock Zephyr
         cmd: "sed -i '/^patches:$/,$d' patches/patches.yml && echo 'patches: []' >> patches/patches.yml"
         match: "FAIL: fresh zephyr lacks imx335-cold-boot-init.patch after west patch apply"
+      - name: hollow_patch_fix_in_comments
+        # the fix lines only inside comments, sha256 updated: west applies it, the code check must refuse it
+        cmd: |-
+          f=patches/zephyr/imx335-cold-boot-init.patch
+          sed -i -E '/^\+/{s#k_sleep\(K_MSEC\(5\)\);#k_sleep(K_USEC(601)); /* k_sleep(K_MSEC(5)); */#;s#(for \(int attempt = 0; ; attempt\+\+\) \{|if \(ret == 0\) \{|if \(attempt >= 10\) \{|k_msleep\(2\);)#/* \1 */#}' "$f"
+          sed -i "s/sha256sum: .*/sha256sum: $(sha256sum "$f" | cut -d' ' -f1)/" patches/patches.yml
+        match: "FAIL: fresh zephyr lacks the IMX335 cold-boot fix \\(drivers/video/imx335.c: no 'k_sleep\\(K_MSEC\\(5\\)\\);'\\)"
       - name: apply_command_noop
         # west patch apply checks the sha256, then runs `true` in zephyr/ instead of git apply
         # (quoted: a bare `true` is a YAML bool and west refuses the file before applying anything)
