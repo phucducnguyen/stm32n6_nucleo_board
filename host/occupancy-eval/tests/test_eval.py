@@ -126,13 +126,20 @@ class PrivacyJudgeRealBuilds(unittest.TestCase):
         self.assertIn("FAIL K1", out)
 
     @unittest.skipUnless(os.path.isfile(PEOPLE_ELF), "st-people not built")
-    def test_current_people_detect_build_fails_on_uvc(self):
-        # The det_emit build still streams video: the Nucleo Makefile forces
-        # SCR_LIB_SCREEN_ITF=UVCL. This is the gap docs/OCCUPANCY-PATH.md stage 1 closes.
+    def test_people_detect_build_verdict_tracks_its_screen_backend(self):
+        # The 2026-06-25 det_emit build streams video (the Nucleo Makefile forces
+        # SCR_LIB_SCREEN_ITF=UVCL) and must FAIL; once rebuilt with the no-screen
+        # backend (docs/OCCUPANCY-PATH.md stage 1) it must PASS. Either way the
+        # verdict has to agree with what nm says is linked.
+        syms = privacy_judge.parse_nm(privacy_judge._run_nm(PEOPLE_ELF))
+        has_uvc = any(s.startswith("UVCL_") for s in syms)
         rc, out = _run(privacy_judge.main, ["--elf", PEOPLE_ELF])
-        self.assertEqual(rc, 1, out)
         self.assertIn("PASS P6 det-emitter", out)
-        self.assertIn("FAIL P2 no-uvc", out)
+        if has_uvc:
+            self.assertEqual(rc, 1, out)
+            self.assertIn("FAIL P2 no-uvc", out)
+        else:
+            self.assertIn("PASS P2 no-uvc", out)
 
 
 SAMPLE_LOG = os.path.join(REPO, "host", "occupancy-bridge", "tests", "sample_capture.log")
