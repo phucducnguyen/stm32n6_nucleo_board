@@ -267,3 +267,15 @@ judges:
       - name: silent_device_reads_as_empty
         cmd: "sed -i 's/dev = _median_round(valid) if len(valid) \\* 2 > len(samples) else None/dev = _median_round(valid) if valid else 0/' host/occupancy-eval/count_score.py"
         match: "FAIL: test_silent_device_is_missing_not_zero"
+    proof:
+      status: PROVEN
+      date: 2026-10-26
+      failing_line: "FAIL: test_webcam_build_fails (test_eval.PrivacyJudgeRealBuilds.test_webcam_build_fails)"
+      detail: >-
+        prove.py on 61141df: the clean run passed (OK, test_webcam_build_fails ok on build/uvc);
+        uvc_check_off and silent_device_reads_as_empty both rejected. The build path itself was run
+        on a copy of st-people (ARM GNU 13.3, --no-sign): the default sealed build printed
+        "VERDICT: PASS no image egress path linked"; --webcam printed "FAIL P2 no-uvc" and
+        "VERDICT: FAIL image egress path or emitter check failed"; the default path forced to UVCL
+        printed "build: REFUSED: the sealed image failed the privacy judge (rc 1); not signed." and
+        never called the signing tool.
