@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-shot host setup for the STM32N6 Zephyr project (atlas).
+# One-shot host setup for the STM32N6 Zephyr project (the Linux dev host).
 # Run as: sudo bash ~/projects/stm32n6/scripts/host-setup.sh
 # Idempotent — safe to re-run.
 set -euo pipefail

@@ -20,13 +20,13 @@ System-level view. Operational commands → root `AGENTS.md`. State → `HANDOVE
                  │  64 MB octo-SPI  │           Ethernet RJ45   │
                  │  flash (boot)    │           (unused so far) │
                  │                  │                           │
-                 │  STLINK-V3EC ────┴── USB-C ──► atlas         │
+                 │  STLINK-V3EC ────┴── USB-C ──► dev host      │
                  │  (debug + VCP console + power)               │
                  └──────────────────────────────────────────────┘
 ```
 
 - Camera connects to the **22-pin FFC CSI connector**; contacts face the board per silkscreen. Sensor control plane is I2C (addr `0x1a`) + 2 GPIOs (reset PO5, power/enable PA0 via gpio-hogs), data plane is 2-lane MIPI CSI-2 D-PHY.
-- ST-Link enumerates on atlas as `0483:3754`, console `/dev/ttyACM0` (115200 8N1).
+- ST-Link enumerates on the dev host as `0483:3754`, console `/dev/ttyACM0` (115200 8N1).
 - No external RAM on the Nucleo (the N6570-DK has 32 MB PSRAM — that's why DK examples can do big frames and we can't).
 
 ## Memory map (what the firmware actually gets)
@@ -78,7 +78,7 @@ The chosen Edge Kit product (2026-06-25) is a **vision-grade local occupancy sen
 
 ```
 camera ─► ON-DEVICE inference (person-detect / count on Neural-ART NPU)
-            └─► emit a SMALL ANONYMOUS event ──► atlas server
+            └─► emit a SMALL ANONYMOUS event ──► local host
                 (people count, occupancy, queue length, dwell, zone engagement)
 ```
 
@@ -88,7 +88,7 @@ camera ─► ON-DEVICE inference (person-detect / count on Neural-ART NPU)
 
 ## Toolchain / host side
 
-atlas (this machine) is the dev host. Self-contained: `.venv` (west, cmake, ninja, py deps) + `~/zephyr-sdk-1.0.1` (arm-zephyr-eabi gcc 14.3). Flash/debug runner = STM32CubeProgrammer (user-installed, license-gated) over ST-Link. No system packages were installed; no sudo anywhere in the build path.
+The Linux dev host is self-hosted. Self-contained: `.venv` (west, cmake, ninja, py deps) + `~/zephyr-sdk-1.0.1` (arm-zephyr-eabi gcc 14.3). Flash/debug runner = STM32CubeProgrammer (user-installed, license-gated) over ST-Link. No system packages were installed; no sudo anywhere in the build path.
 
 ## Decisions
 
