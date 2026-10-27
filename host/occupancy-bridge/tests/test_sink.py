@@ -62,6 +62,12 @@ class TestCanonicalTs(unittest.TestCase):
             with self.assertRaises(ValueError, msg=repr(raw)):
                 canonical_ts(raw)
 
+    def test_rejects_trailing_newline_and_non_ascii_digits(self):
+        # `$` matches before a final "\n"; `\d` without re.ASCII matches U+0662.
+        for raw in ("2026-10-25T23:59:59Z\n", "\u0662026-10-25T23:59:59Z"):
+            with self.assertRaises(ValueError, msg=repr(raw)):
+                canonical_ts(raw)
+
     def test_record_overwrites_received_at(self):
         env = ev.heartbeat_event(1, 2, 3, node="n6-occ-test")
         env["received_at"] = "bogus"

@@ -42,7 +42,8 @@ log = logging.getLogger("occbridge.sink")
 _EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
 _RFC3339 = re.compile(
     r"^(\d{4})-(\d{2})-(\d{2})[Tt](\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?"
-    r"([Zz]|[+-]\d{2}:\d{2})$"
+    r"([Zz]|[+-]\d{2}:\d{2})\Z",
+    re.ASCII,  # \d must not match non-ASCII digits; \Z, not $, so no trailing newline
 )
 
 
