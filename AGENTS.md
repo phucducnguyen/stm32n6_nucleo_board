@@ -29,6 +29,19 @@ Host has **no system cmake/ninja/gperf/dtc** — everything lives in `.venv`. To
 
 Always with the venv on PATH (west sub-tools resolve `cmake` by name).
 
+**Fresh clone: `scripts/bootstrap-workspace.sh`.** `zephyr/`, `modules/`,
+`.west/` and `.venv/` are not committed; this script creates `.venv` from the
+pinned `scripts/requirements-host.txt`, clones Zephyr v4.4.1 (shallow) into
+`zephyr/`, runs `west init -l zephyr`, `west update --narrow -o=--depth=1
+cmsis cmsis_6 hal_stm32`, applies the Zephyr patches (`west patch`, skipped
+when already applied) and ends with `scripts/check-zephyr-patches.sh`. It
+refuses to run over an existing workspace unless `--force` (then each step
+skips what is done). `ZEPHYR_LOCAL_MIRROR=<other workspace root>` clones
+Zephyr with `git clone --shared` and fetches the modules from that workspace
+instead of GitHub. Not installed by it: the Zephyr SDK
+(`~/zephyr-sdk-1.0.1`, arm-zephyr-eabi) and STM32CubeProgrammer, whose
+`bin/` must be on PATH at build time or no `zephyr.signed.bin` is produced.
+
 **Primary: our application `apps/camera-app/`** (UVC webcam; forked from the
 upstream uvc sample 2026-06-12 — shield, vidpool overlay, pool configs,
 sync-logging and startup gain are all owned by the app, so no `-D` flags):

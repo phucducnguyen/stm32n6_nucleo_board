@@ -1,0 +1,16 @@
+# Host Python tools for building this repo (pinned; installed into .venv by
+# scripts/bootstrap-workspace.sh). The host has no system cmake/ninja: west
+# calls them by name from .venv/bin. Versions are the ones the working
+# workspace builds with; the rest is Zephyr's scripts/requirements-base.txt
+# subset that `west build` and `west patch` import.
+west==1.5.0
+cmake==4.3.2
+ninja==1.13.0
+pyelftools==0.33
+PyYAML==6.0.3
+pykwalify==1.8.0
+packaging==26.2
+jsonschema==4.26.0
+intelhex==2.3.0
+anytree==2.13.0
+pyserial==3.5
