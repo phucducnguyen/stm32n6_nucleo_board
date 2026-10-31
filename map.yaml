@@ -1,4 +1,4 @@
-# Overwatch oversight map — structural intent for this repo.
+# Oversight map — structural intent for this repo.
 # A node goes green only when every verify command exits 0; a node with no
 # verify command carries no automated evidence and stays yellow, which is the
 # honest reading for anything that needs the Zephyr SDK, the board, a camera,
@@ -17,7 +17,7 @@ nodes:
       usage events are meant to leave the board (see host node). The verify
       command builds the app (Zephyr SDK + .venv on this machine, about 25 s)
       and runs the preflight gate on the image; proving the firmware actually
-      works still needs the physical board and camera, which Overwatch does
+      works still needs the physical board and camera, which the checker does
       not run.
     paths:
       - "apps/camera-app/**"
@@ -69,7 +69,7 @@ nodes:
     purpose: >
       The occupancy-bridge (reads board events, forwards them) and
       usage-report (turns events into a readable report) tools that run on
-      atlas rather than the board.
+      the dev host rather than the board.
     intent: >
       Both packages are stdlib unit-tested; the verify commands run those
       suites.

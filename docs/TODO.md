@@ -21,7 +21,7 @@ Each milestone is independently demo-able; don't start M(n+1) before M(n) passes
 - [ ] (optional) switch prod logging off the sync crutch — race no longer needs `CONFIG_LOG_MODE_IMMEDIATE`; use a big deferred buffer instead (avoids the trap-#1 log-drop). Also consider an upstream IMX335 cold-boot PR
 
 ## M2 — own application (`apps/camera-app`) — frame export landed early via UVC
-- [x] frame export path for eyeballing images on atlas: USB webcam (Zephyr UVC sample → `build/uvc`, VGA needs the 1.25 MB pool configs) + ustreamer browser stream (`scripts/cam-stream.sh`, loopback :8091 by default) + on-demand AI description (`scripts/cam-describe.sh`) ✅ 2026-06-11
+- [x] frame export path for eyeballing images on the dev host: USB webcam (Zephyr UVC sample → `build/uvc`, VGA needs the 1.25 MB pool configs) + ustreamer browser stream (`scripts/cam-stream.sh`, loopback :8091 by default) + on-demand AI description (`scripts/cam-describe.sh`) ✅ 2026-06-11
 - [x] `apps/camera-app` created — UVC sample forked + owned (shield/overlay/configs self-contained, encoder dead code stripped, `app_usbd.c` replaces sample helpers); builds clean, 135 KB in the 511 KB window ✅ 2026-06-12
 - [x] **flash `build/camera-app` + verify webcam/stream on hardware** — HW verify PASSED 2026-06-13; the two sample-file temp edits in `zephyr/` reverted ✅
 - [ ] extend the app: Zephyr shell cmds (snap/stats), capture-N-frames mode
@@ -40,7 +40,7 @@ Each milestone is independently demo-able; don't start M(n+1) before M(n) passes
 > occupancy, queue length, dwell, zone engagement). **Core promise (goal): the camera image
 > NEVER leaves the device**; not yet true of any built image: the current people-detect build still links ST's UVC video stream (`host/occupancy-eval/privacy_judge.py` FAIL P2: `UVCL_Init`, `UVCL_ShowFrame`). Gate: the no-screen build (`host/occupancy-eval/firmware/st-people-no-screen.patch`) passes that judge; the sealed image is not yet signed or flashed (`docs/OCCUPANCY-PATH.md` stages 1-2). That local-only guarantee is both the privacy story and
 > the wedge vs cloud cameras. Data flow: **camera → on-device inference (count) → emit a
-> small anonymous event to atlas; the frame stays on the board.** Positioning: NOT "more
+> small anonymous event to the host; the frame stays on the board.** Positioning: NOT "more
 > private than thermal" (camera-free thermal/blob sensors own a hardware privacy
 > guarantee a camera can't match) — the wedge is **richer spatial detail than thermal,
 > WITH local-only processing**, aimed at granularity-hungry, less-camera-shy spaces
@@ -51,7 +51,7 @@ Each milestone is independently demo-able; don't start M(n+1) before M(n) passes
 > **Validation gate still holds:** a real space manager must care about a weekly usage
 > report before any custom PCB.
 - [ ] STM32Cube.AI / X-CUBE-N6 evaluation for Neural-ART NPU (NOT Zephyr — keep in its own dir/repo)
-- [~] ⭐ **product-aligned next build: on-device person-detection / counting** — camera → NPU count → emit one small anonymous event to atlas (goal: NO image leaves the board). This is the wedge capability. **DET emitter built and signed 2026-06-25, not flashed. That build still streams video over UVC, so it is not the product image:** not yet true of any built image: the current people-detect build still links ST's UVC video stream (`host/occupancy-eval/privacy_judge.py` FAIL P2: `UVCL_Init`, `UVCL_ShowFrame`). Gate: the no-screen build (`host/occupancy-eval/firmware/st-people-no-screen.patch`) passes that judge; the sealed image is not yet signed or flashed (`docs/OCCUPANCY-PATH.md` stages 1-2).
+- [~] ⭐ **product-aligned next build: on-device person-detection / counting** — camera → NPU count → emit one small anonymous event to the host (goal: NO image leaves the board). This is the wedge capability. **DET emitter built and signed 2026-06-25, not flashed. That build still streams video over UVC, so it is not the product image:** not yet true of any built image: the current people-detect build still links ST's UVC video stream (`host/occupancy-eval/privacy_judge.py` FAIL P2: `UVCL_Init`, `UVCL_ShowFrame`). Gate: the no-screen build (`host/occupancy-eval/firmware/st-people-no-screen.patch`) passes that judge; the sealed image is not yet signed or flashed (`docs/OCCUPANCY-PATH.md` stages 1-2).
   - **Model SETTLED (from compiled files, not docs):** NUCLEO flavor = **TinyYOLOv2 224×224** (`POSTPROCESS_OD_YOLO_V2_UF`, 5 anchors, SLA0044); DK flavor = YoloX-N 416. Repo cloned (our fork) at `../st-people` (sibling, not in git).
   - **Output interface SETTLED — the prebuilt firmware is OVERLAY-ONLY.** It computes count + boxes + **persistent track IDs** but renders them to pixels and discards them: UART1 carries status strings only, USB is UVC-video-only, no CDC. So OCR-the-overlay was rejected; instead we **forked the firmware and tapped the data at the source.**
   - **Firmware fork built and signed 2026-06-25, not yet flashed:** `Src/det_emit.c` + `Inc/det_emit.h` add `DetEmit_Frame()` — one `printf` line per inference frame over the existing USART1/VCP (no new UART init), called once in `app.c` right after the tracker finalizes `disp.info.tboxes[]`. Wire protocol (line-based, integer-only): `DET <seq> <ts_ms> <count> [<id>:<cx>:<cy>:<w>:<h>:<conf> ...]` (cx/cy/w/h permille, conf percent). `APP_DET_EMIT` toggle (default on). Provenance: `patches/st-people-uart-det-emit.patch` (+ `README-det-emit.md`). Builds with `scripts/build-people-detect.sh` (ARM GNU 13.3 + STM32_SigningTool); `DetEmit_Frame` confirmed linked, 79.5% AXISRAM. (The fork's Makefile strips ST's `-fcyclomatic-complexity` flag, which mainline ARM GNU GCC rejects; see the patch.)
@@ -69,15 +69,15 @@ Each milestone is independently demo-able; don't start M(n+1) before M(n) passes
 > LEARNING ONLY, NOT the product** — sending the frame off the board directly contradicts
 > the "images never leave the device" promise. The product path emits a small **anonymous
 > event** (a count), not a frame — see N4 and the M4 product note.
-- [ ] **N1 — first packet (plumbing):** `swd-run build/net-dhcp` → DHCP lease on the LAN, ping atlas ↔ N6 both ways (board in dev-boot, RJ45 → LAN). Sample already builds (`build/net-dhcp`).
+- [ ] **N1 — first packet (plumbing):** `swd-run build/net-dhcp` → DHCP lease on the LAN, ping the host ↔ N6 both ways (board in dev-boot, RJ45 → LAN). Sample already builds (`build/net-dhcp`).
 - [ ] **N2 — hello over HTTP (plumbing):** N6 runs an HTTP server; browser → N6 → text + uptime/status. Foundation for the event-emit transport.
 - [ ] **N3 — snapshot over HTTP (LEARNING ONLY — NOT product):** browser → N6 → a camera still. Useful as a JPEG/HTTP feasibility spike (does the N6 JPEG-encode? hardware JPEG codec exists; Zephyr driver? — investigate), but streaming a frame off the board CONTRADICTS the local-only promise — do NOT ship this as the product.
-- [ ] **N4 — process + report ⭐ (product transport):** on-board count (M4 person-detection) / motion (M3 frame-stats) emits a small **anonymous event** to atlas (Edge Kit event-spine pattern) — the image stays on the board. This is the product-aligned use of the Ethernet stack.
+- [ ] **N4 — process + report ⭐ (product transport):** on-board count (M4 person-detection) / motion (M3 frame-stats) emits a small **anonymous event** to the host (Edge Kit event-spine pattern) — the image stays on the board. This is the product-aligned use of the Ethernet stack.
 
-> **Bigger picture (2026-06-12):** this project is the *perception-node lane* of the
-> **Nebula Edge Kit** platform (Nanos as BLE sensor tags, atlas as event server, GPU
-> boxes as the training flywheel, future carrier-shield PCB). Platform plan:
-> `second-brain/projects/edge-kit/PLAN.md` (in the vault). M4 here ≈ Edge Kit "E2b";
+> **Bigger picture (2026-06-12):** this project is the *perception node* of an
+> **edge-kit** platform (Nanos as BLE sensor tags, a home server as event server, GPU
+> boxes as the training flywheel, future carrier-shield PCB). The platform plan
+> is kept outside this repo. M4 here ≈ Edge Kit "E2b";
 > this repo's M-ladder continues unchanged and stays self-contained.
 
 ## Housekeeping / opportunistic
@@ -87,4 +87,4 @@ Each milestone is independently demo-able; don't start M(n+1) before M(n) passes
 
 ## Parked
 - PYNQ-Z2 FPGA vision-accel learning track — revisit after M2/M3
-- Government bid tracker — software-only, belongs in the Nebula/n8n world, not here
+- Government bid tracker — software-only, belongs elsewhere, not here

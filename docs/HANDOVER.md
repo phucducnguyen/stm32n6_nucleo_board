@@ -15,7 +15,7 @@
 >
 > **What this means for the build priority — read before picking the next step:**
 > The product's data flow is **camera → on-device inference (count) → emit a small event
-> to atlas**, image staying on the board. The **pose spike already proved the on-device
+> to the host**, image staying on the board. The **pose spike already proved the on-device
 > NPU path works (14–15 ms)**, so that capability is closer to the product than the
 > Ethernet plan's **N3 "snapshot-over-HTTP"**, which *sends the frame out to a browser* and
 > therefore **contradicts the "images never leave" promise**. Keep the Ethernet/HTTP work
@@ -70,13 +70,13 @@ NEXT SESSION STARTS HERE.
     `boards/st/nucleo_n657x0_q/nucleo_n657x0_q_common.dtsi`. **No overlay needed.**
   - **Trial build `zephyr/samples/net/dhcpv4_client` → clean, 231 KB / 44 % of the
     511 KB window** (`build/net-dhcp`). Plenty of headroom.
-  - **Plan (each step demoable):** N1 first-packet (DHCP lease + ping atlas ↔ N6) →
+  - **Plan (each step demoable):** N1 first-packet (DHCP lease + ping the host ↔ N6) →
     N2 hello-over-HTTP (browser → N6 IP → text) → **N3 snapshot-over-HTTP ⭐** (browser
     → camera still; *open feasibility* — JPEG/frame size + camera+net coexistence in
     511 KB, de-risk with a spike before promising) → N4 on-board process + emit event
-    to atlas.
+    to the host.
   - **Resume N1:** board → **dev-boot**, Ethernet RJ45 → LAN, then
-    `scripts/swd-run.sh build/net-dhcp`, watch `ttyACM0` for the DHCP lease, ping atlas.
+    `scripts/swd-run.sh build/net-dhcp`, watch `ttyACM0` for the DHCP lease, ping the host.
 
 ---
 
@@ -139,7 +139,7 @@ sync crutch (big deferred buffer) now that the race no longer needs it.
 
 **CAMERA FULLY WORKING, end to end.** The board runs the Zephyr UVC
 sample (`build/uvc` — known-good fallback binary, do not delete) and is a
-standard USB webcam on atlas (`/dev/video0`); live browser stream via
+standard USB webcam on the dev host (`/dev/video0`); live browser stream via
 ustreamer (`scripts/cam-stream.sh`; since 2026-10-26 it binds 127.0.0.1:8091 by
 default, wider bind opt-in); on-demand AI scene description through a LAN Ollama vision model.
 M1 "first light" is DONE and then some.

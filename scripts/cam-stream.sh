@@ -8,7 +8,7 @@
 #
 # Binds loopback by default: the product invariant is that the camera image
 # never leaves the device, and this stream is debug plumbing, not product.
-# Opt in to a wider bind explicitly, e.g. CAM_STREAM_HOST=<tailnet-ip>.
+# Opt in to a wider bind explicitly, e.g. CAM_STREAM_HOST=<host-ip>.
 # Port default 8091 (8090 is taken on the dev host); override with
 # CAM_STREAM_PORT or the first argument.
 #

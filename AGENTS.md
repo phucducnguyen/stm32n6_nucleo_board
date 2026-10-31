@@ -146,7 +146,7 @@ Full story: `docs/camera-bringup-debug-log.md`. The three traps, in order of pai
 - Serial port needs `dialout` group membership (no sudo workarounds in scripts).
 - Boot pins: don't leave BOOT1=1 after flashing — the board will sit in dev boot doing nothing.
 
-## Conventions (inherited from nebula where they apply)
+## Conventions
 
 - Edit in place. The repo has one GitHub remote (`origin`, public): pushes are the owner's call; scan for private paths and secrets before any push; add no other remote without being asked.
 - No `Co-Authored-By` trailers in commits.

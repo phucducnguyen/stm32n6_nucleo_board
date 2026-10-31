@@ -1,7 +1,7 @@
 # STM32N6 / NUCLEO-N657X0-Q — verified facts
 
 One-stop reference so we never re-research this. Sources: ST primary docs + Zephyr upstream,
-cross-checked against our own hardware experiments on atlas (2026-06-10). Facts marked
+cross-checked against our own hardware experiments on our dev host (2026-06-10). Facts marked
 **[verified on our board]** were proven by experiment here, not just read.
 
 ## Primary documents
@@ -61,7 +61,7 @@ STM32N657 has **no internal flash**. The on-chip BootROM always runs first and l
 - **CN10** = STLINK-V3EC USB-C: debug + VCP + default board power. **CN8** = user USB-C (USB2 HS, DRP): serial-boot DFU.
   With default power config (**CN9 jumper [1-2]** = 5V from ST-Link) you need **both cables** for serial boot:
   CN10 powers + console, CN8 carries the image.
-- **VCP = USART1, TX PE5 / RX PE6 (AF7)**, 115200 8N1. On atlas it's `/dev/ttyACM*` — the number **renumbers on
+- **VCP = USART1, TX PE5 / RX PE6 (AF7)**, 115200 8N1. On the dev host it's `/dev/ttyACM*` — the number **renumbers on
   replug** (ACM0↔ACM1); always glob for the newest. **[verified on our board]**
 - **External flash**: Macronix **MX25UM51245G** (512 Mbit octo-SPI, XSPI2) memory-mapped at `0x70000000`.
   CubeProgrammer external loader: `MX25UM51245G_STM32N6570-NUCLEO.stldr`. Never "full chip erase" (no internal flash).
@@ -123,7 +123,7 @@ Only the DK's *chainloaded* (MCUboot) variant runs from `axisram1`; the Nucleo h
   streamed 640x480 RGBP @ 30 fps once logging was immediate. Proper fix (delay/
   retry in sensor init) pending — see `docs/camera-bringup-debug-log.md`.
 
-## Canonical workflows on atlas **[verified on our board]**
+## Canonical workflows on the dev host **[verified on our board]**
 
 Serial-boot dev loop (fast, RAM-only):
 1. Jumpers: BOOT0 → pos 2 (unprinted), BOOT1 → pos 1 (printed). Both cables (CN10 + CN8).
